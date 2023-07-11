@@ -121,7 +121,7 @@ func (cs *system) GetR1Cs() []constraint.R1C {
 		blueprint := cs.Blueprints[inst.BlueprintID]
 		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
 			var r1c constraint.R1C
-			bc.DecompressR1C(&r1c, cs.GetCallData(inst))
+			bc.DecompressR1C(&r1c, inst.Unpack(&cs.System))
 			toReturn = append(toReturn, r1c)
 		} else {
 			panic("not implemented")
@@ -159,8 +159,8 @@ func (cs *system) WriteTo(w io.Writer) (int64, error) {
 func (cs *system) ReadFrom(r io.Reader) (int64, error) {
 	ts := getTagSet()
 	dm, err := cbor.DecOptions{
-		MaxArrayElements: 134217728,
-		MaxMapPairs:      134217728,
+		MaxArrayElements: 2147483647,
+		MaxMapPairs:      2147483647,
 	}.DecModeWithTags(ts)
 
 	if err != nil {
@@ -177,6 +177,13 @@ func (cs *system) ReadFrom(r io.Reader) (int64, error) {
 
 	if err := cs.CheckSerializationHeader(); err != nil {
 		return int64(decoder.NumBytesRead()), err
+	}
+
+	switch v := cs.CommitmentInfo.(type) {
+	case *constraint.Groth16Commitments:
+		cs.CommitmentInfo = *v
+	case *constraint.PlonkCommitments:
+		cs.CommitmentInfo = *v
 	}
 
 	return int64(decoder.NumBytesRead()), nil
@@ -196,8 +203,7 @@ func (cs *system) GetSparseR1Cs() []constraint.SparseR1C {
 		blueprint := cs.Blueprints[inst.BlueprintID]
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			var sparseR1C constraint.SparseR1C
-			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
-			bc.DecompressSparseR1C(&sparseR1C, calldata)
+			bc.DecompressSparseR1C(&sparseR1C, inst.Unpack(&cs.System))
 			toReturn = append(toReturn, sparseR1C)
 		} else {
 			panic("not implemented")
@@ -234,7 +240,7 @@ func evaluateLROSmallDomain(cs *system, solution []fr.Element) ([]fr.Element, []
 	for _, inst := range cs.Instructions {
 		blueprint := cs.Blueprints[inst.BlueprintID]
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
-			bc.DecompressSparseR1C(&sparseR1C, cs.GetCallData(inst))
+			bc.DecompressSparseR1C(&sparseR1C, inst.Unpack(&cs.System))
 
 			l[offset+j] = solution[sparseR1C.XA]
 			r[offset+j] = solution[sparseR1C.XB]
@@ -288,12 +294,12 @@ func (t *R1CSSolution) ReadFrom(r io.Reader) (int64, error) {
 		return n, err
 	}
 	a, err := t.A.ReadFrom(r)
-	a += n
+	n += a
 	if err != nil {
 		return n, err
 	}
 	a, err = t.B.ReadFrom(r)
-	a += n
+	n += a
 	if err != nil {
 		return n, err
 	}
@@ -329,12 +335,12 @@ func (t *SparseR1CSSolution) ReadFrom(r io.Reader) (int64, error) {
 		return n, err
 	}
 	a, err := t.R.ReadFrom(r)
-	a += n
+	n += a
 	if err != nil {
 		return n, err
 	}
 	a, err = t.O.ReadFrom(r)
-	a += n
+	n += a
 	return n, err
 }
 
@@ -360,6 +366,14 @@ func getTagSet() cbor.TagSet {
 	addType(reflect.TypeOf(constraint.BlueprintGenericSparseR1C{}))
 	addType(reflect.TypeOf(constraint.BlueprintSparseR1CAdd{}))
 	addType(reflect.TypeOf(constraint.BlueprintSparseR1CMul{}))
+	addType(reflect.TypeOf(constraint.BlueprintSparseR1CBool{}))
+	addType(reflect.TypeOf(constraint.BlueprintLookupHint{}))
+	addType(reflect.TypeOf(constraint.Groth16Commitments{}))
+	addType(reflect.TypeOf(constraint.PlonkCommitments{}))
 
 	return ts
+}
+
+func (s *system) AddGkr(gkr constraint.GkrInfo) error {
+	return s.System.AddGkr(gkr)
 }

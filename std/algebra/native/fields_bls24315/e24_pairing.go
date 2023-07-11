@@ -25,8 +25,8 @@ func (e *E24) MulBy034(api frontend.API, c3, c4 E4) *E24 {
 }
 
 // Mul034By034 multiplication of sparse element (1,0,0,c3,c4,0) by sparse element (1,0,0,d3,d4,0)
-func (e *E24) Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *E24 {
-	var one, tmp, x3, x4, x04, x03, x34 E4
+func Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *[5]E4 {
+	var one, tmp, x00, x3, x4, x04, x03, x34 E4
 	one.SetOne()
 	x3.Mul(api, c3, d3)
 	x4.Mul(api, c4, d4)
@@ -38,15 +38,10 @@ func (e *E24) Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *E24 {
 		Sub(api, x34, x3).
 		Sub(api, x34, x4)
 
-	e.D0.C0.MulByNonResidue(api, x4).
-		Add(api, e.D0.C0, one)
-	e.D0.C1 = x3
-	e.D0.C2 = x34
-	e.D1.C0 = x03
-	e.D1.C1 = x04
-	e.D1.C2.SetZero()
+	x00.MulByNonResidue(api, x4).
+		Add(api, x00, one)
 
-	return e
+	return &[5]E4{x00, x3, x34, x03, x04}
 }
 
 // Expt compute e1**exponent, where the exponent is hardcoded

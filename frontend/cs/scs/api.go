@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/frontend/cs"
 
 	"github.com/consensys/gnark/constraint"
@@ -157,16 +158,23 @@ func (builder *builder) Inverse(i1 frontend.Variable) frontend.Variable {
 		return builder.cs.ToBigInt(c)
 	}
 	t := i1.(expr.Term)
-	debug := builder.newDebugInfo("inverse", "1/", i1, " < ∞")
 	res := builder.newInternalVariable()
 
 	// res * i1 - 1 == 0
-	builder.addPlonkConstraint(sparseR1C{
+	constraint := sparseR1C{
 		xa: res.VID,
 		xb: t.VID,
 		qM: t.Coeff,
 		qC: builder.tMinusOne,
-	}, debug)
+	}
+
+	if debug.Debug {
+		debug := builder.newDebugInfo("inverse", "1/", i1, " < ∞")
+		builder.addPlonkConstraint(constraint, debug)
+	} else {
+		builder.addPlonkConstraint(constraint)
+	}
+
 	return res
 }
 
@@ -513,7 +521,7 @@ func (builder *builder) Println(a ...frontend.Variable) {
 			sbb.WriteString("%s")
 			// we set limits to the linear expression, so that the log printer
 			// can evaluate it before printing it
-			log.ToResolve = append(log.ToResolve, constraint.LinearExpression{builder.cs.MakeTerm(&v.Coeff, v.VID)})
+			log.ToResolve = append(log.ToResolve, constraint.LinearExpression{builder.cs.MakeTerm(v.Coeff, v.VID)})
 		} else {
 			builder.printArg(&log, &sbb, arg)
 		}
@@ -549,7 +557,7 @@ func (builder *builder) printArg(log *constraint.LogEntry, sbb *strings.Builder,
 		v := tValue.Interface().(expr.Term)
 		// we set limits to the linear expression, so that the log printer
 		// can evaluate it before printing it
-		log.ToResolve = append(log.ToResolve, constraint.LinearExpression{builder.cs.MakeTerm(&v.Coeff, v.VID)})
+		log.ToResolve = append(log.ToResolve, constraint.LinearExpression{builder.cs.MakeTerm(v.Coeff, v.VID)})
 		return nil
 	}
 	// ignoring error, printer() doesn't return errors
@@ -563,6 +571,7 @@ func (builder *builder) Compiler() frontend.Compiler {
 
 func (builder *builder) Commit(v ...frontend.Variable) (frontend.Variable, error) {
 
+	commitments := builder.cs.GetCommitments().(constraint.PlonkCommitments)
 	v = filterConstants(v) // TODO: @Tabaie Settle on a way to represent even constants; conventional hash?
 
 	committed := make([]int, len(v))
@@ -574,17 +583,24 @@ func (builder *builder) Commit(v ...frontend.Variable) (frontend.Variable, error
 		// - v + comm(n) = 0
 		builder.addPlonkConstraint(sparseR1C{xa: vINeg.VID, qL: vINeg.Coeff, commitment: constraint.COMMITTED})
 	}
-	outs, err := builder.NewHint(cs.Bsb22CommitmentComputePlaceholder, 1, v...)
+
+	hintId, err := cs.RegisterBsb22CommitmentComputePlaceholder(len(commitments))
 	if err != nil {
 		return nil, err
 	}
+
+	var outs []frontend.Variable
+	if outs, err = builder.NewHintForId(hintId, 1, v...); err != nil {
+		return nil, err
+	}
+
 	commitmentVar := builder.Neg(outs[0]).(expr.Term)
 	commitmentConstraintIndex := builder.cs.GetNbConstraints()
 	// RHS will be provided by both prover and verifier independently, as for a public wire
 	builder.addPlonkConstraint(sparseR1C{xa: commitmentVar.VID, qL: commitmentVar.Coeff, commitment: constraint.COMMITMENT}) // value will be injected later
 
-	return outs[0], builder.cs.AddCommitment(constraint.Commitment{
-		HintID:          solver.GetHintID(cs.Bsb22CommitmentComputePlaceholder),
+	return outs[0], builder.cs.AddCommitment(constraint.PlonkCommitment{
+		HintID:          hintId,
 		CommitmentIndex: commitmentConstraintIndex,
 		Committed:       committed,
 	})
@@ -602,4 +618,8 @@ func filterConstants(v []frontend.Variable) []frontend.Variable {
 
 func (*builder) FrontendType() frontendtype.Type {
 	return frontendtype.SCS
+}
+
+func (builder *builder) SetGkrInfo(info constraint.GkrInfo) error {
+	return builder.cs.AddGkr(info)
 }
