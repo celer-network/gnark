@@ -1,6 +1,7 @@
 package sw_emulated
 
 import (
+	bw6761 "github.com/consensys/gnark-crypto/ecc/bw6-761"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
@@ -40,6 +41,32 @@ func computeBN254Table() [][2]*big.Int {
 	aff := new(bn254.G1Affine)
 	jac := new(bn254.G1Jac)
 	for i := 1; i < 256; i++ {
+		tmp = tmp.Double(tmp)
+		switch i {
+		case 1, 2:
+			jac.Set(tmp).AddAssign(&Gjac)
+			aff.FromJacobian(jac)
+			table[i-1] = [2]*big.Int{aff.X.BigInt(new(big.Int)), aff.Y.BigInt(new(big.Int))}
+		case 3:
+			jac.Set(tmp).SubAssign(&Gjac)
+			aff.FromJacobian(jac)
+			table[i-1] = [2]*big.Int{aff.X.BigInt(new(big.Int)), aff.Y.BigInt(new(big.Int))}
+			fallthrough
+		default:
+			aff.FromJacobian(tmp)
+			table[i] = [2]*big.Int{aff.X.BigInt(new(big.Int)), aff.Y.BigInt(new(big.Int))}
+		}
+	}
+	return table
+}
+
+func computeBW6761Table() [][2]*big.Int {
+	Gjac, _, _, _ := bw6761.Generators()
+	table := make([][2]*big.Int, 761)
+	tmp := new(bw6761.G1Jac).Set(&Gjac)
+	aff := new(bw6761.G1Affine)
+	jac := new(bw6761.G1Jac)
+	for i := 1; i < 761; i++ {
 		tmp = tmp.Double(tmp)
 		switch i {
 		case 1, 2:

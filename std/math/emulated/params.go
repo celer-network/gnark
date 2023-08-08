@@ -97,3 +97,17 @@ func (fp BLS12381Fp) NbLimbs() uint     { return 6 }
 func (fp BLS12381Fp) BitsPerLimb() uint { return 64 }
 func (fp BLS12381Fp) IsPrime() bool     { return true }
 func (fp BLS12381Fp) Modulus() *big.Int { return ecc.BLS12_381.BaseField() }
+
+type BW6761Fp struct{}
+
+func (fp BW6761Fp) NbLimbs() uint     { return 12 }
+func (fp BW6761Fp) BitsPerLimb() uint { return 64 }
+func (fp BW6761Fp) IsPrime() bool     { return true }
+func (fp BW6761Fp) Modulus() *big.Int { return ecc.BW6_761.BaseField() }
+
+type BW6761Fr struct{}
+
+func (fp BW6761Fr) NbLimbs() uint     { return 6 }
+func (fp BW6761Fr) BitsPerLimb() uint { return 64 }
+func (fp BW6761Fr) IsPrime() bool     { return true }
+func (fp BW6761Fr) Modulus() *big.Int { return ecc.BW6_761.ScalarField() }

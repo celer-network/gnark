@@ -1,6 +1,7 @@
 package sw_emulated
 
 import (
+	bw6761 "github.com/consensys/gnark-crypto/ecc/bw6-761"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
@@ -50,6 +51,17 @@ func GetBN254Params() CurveParams {
 	}
 }
 
+func GetBW6761Params() CurveParams {
+	_, _, g1aff, _ := bw6761.Generators()
+	return CurveParams{
+		A:  big.NewInt(0),
+		B:  big.NewInt(-1),
+		Gx: g1aff.X.BigInt(new(big.Int)),
+		Gy: g1aff.Y.BigInt(new(big.Int)),
+		Gm: computeBW6761Table(),
+	}
+}
+
 // GetCurveParams returns suitable curve parameters given the parametric type Base as base field.
 func GetCurveParams[Base emulated.FieldParams]() CurveParams {
 	var t Base
@@ -58,6 +70,8 @@ func GetCurveParams[Base emulated.FieldParams]() CurveParams {
 		return secp256k1Params
 	case "30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47":
 		return bn254Params
+	case "122e824fb83ce0ad187c94004faff3eb926186a81d14688528275ef8087be41707ba638e584e91903cebaff25b423048689c8ed12f9fd9071dcd3dc73ebff2e98a116c25667a8f8160cf8aeeaf0a437e6913e6870000082f49d00000000008b":
+		return bw6761Params
 	default:
 		panic("no stored parameters")
 	}
@@ -66,9 +80,11 @@ func GetCurveParams[Base emulated.FieldParams]() CurveParams {
 var (
 	secp256k1Params CurveParams
 	bn254Params     CurveParams
+	bw6761Params    CurveParams
 )
 
 func init() {
 	secp256k1Params = GetSecp256k1Params()
 	bn254Params = GetBN254Params()
+	bw6761Params = GetBW6761Params()
 }
