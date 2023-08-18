@@ -111,3 +111,11 @@ func (fp BW6761Fr) NbLimbs() uint     { return 6 }
 func (fp BW6761Fr) BitsPerLimb() uint { return 64 }
 func (fp BW6761Fr) IsPrime() bool     { return true }
 func (fp BW6761Fr) Modulus() *big.Int { return ecc.BW6_761.ScalarField() }
+
+// added by patrick
+type BLS12377Fr struct{}
+
+func (fr BLS12377Fr) NbLimbs() uint     { return 4 }
+func (fr BLS12377Fr) BitsPerLimb() uint { return 64 }
+func (fr BLS12377Fr) IsPrime() bool     { return true }
+func (fr BLS12377Fr) Modulus() *big.Int { return ecc.BLS12_377.ScalarField() }
