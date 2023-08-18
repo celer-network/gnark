@@ -32,3 +32,5 @@ require (
 )
 
 replace github.com/consensys/gnark-crypto => github.com/celer-network/gnark-crypto v0.0.0-20230423085214-c00cabca6125
+
+//replace github.com/consensys/gnark-crypto => github.com/bytetang/gnark-crypto v0.0.0-20230530142037-050894b6b603

@@ -180,3 +180,39 @@ func TestScalarMul(t *testing.T) {
 	err := test.IsSolved(&circuit, &witness, testCurve.ScalarField())
 	assert.NoError(err)
 }
+
+type AffineAddAssignTest struct {
+	P G1Affine
+	Q G1Affine
+	C G1Affine
+}
+
+func (c *AffineAddAssignTest) Define(api frontend.API) error {
+	pr, _ := NewPairing(api)
+	c.P.AddAssign(pr, c.Q)
+	pr.Fp.AssertIsEqual(&c.P.X, &c.C.X)
+	pr.Fp.AssertIsEqual(&c.P.Y, &c.C.Y)
+	return nil
+}
+
+func TestAffineAddAssign(t *testing.T) {
+	var _p = randomPointG1()
+	var _q = randomPointG1()
+
+	var p, q, c bw6761.G1Affine
+	p.FromJacobian(&_p)
+	q.FromJacobian(&_q)
+
+	_p.AddAssign(&_q)
+
+	c.FromJacobian(&_p)
+	witness := AffineAddAssignTest{
+		P: NewG1Affine(p),
+		Q: NewG1Affine(q),
+		C: NewG1Affine(c),
+	}
+
+	assert := test.NewAssert(t)
+	err := test.IsSolved(&AffineAddAssignTest{}, &witness, testCurve.ScalarField())
+	assert.NoError(err)
+}

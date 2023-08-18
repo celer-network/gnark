@@ -205,6 +205,48 @@ func TestFinalExponentiationSafeCircuit(t *testing.T) {
 	assert.NoError(err)
 }
 
+type millerLoopBn254 struct {
+	A G1Affine
+	B G2Affine
+	C GTEl
+}
+
+func (circuit *millerLoopBn254) Define(api frontend.API) error {
+	pr, err := NewPairing(api)
+	if err != nil {
+		panic(err)
+	}
+	expected, err := pr.MillerLoop([]*G1Affine{&circuit.A}, []*G2Affine{&circuit.B})
+	if err != nil {
+		return err
+	}
+
+	pr.AssertIsEqual(expected, &circuit.C)
+
+	return nil
+}
+
+func TestMillerLoopBn254(t *testing.T) {
+	assert := test.NewAssert(t)
+	// witness values
+
+	p, q := randomG1G2Affines()
+
+	c, err := bn254.MillerLoop([]bn254.G1Affine{p}, []bn254.G2Affine{q})
+	if err != nil {
+		panic(err)
+	}
+
+	witness := millerLoopBn254{
+		A: NewG1Affine(p),
+		B: NewG2Affine(q),
+		C: NewGTEl(c),
+	}
+
+	err = test.IsSolved(&millerLoopBn254{}, &witness, ecc.BN254.ScalarField())
+	assert.NoError(err)
+}
+
 func BenchmarkPairing(b *testing.B) {
 
 	p1, q1 := randomG1G2Affines()

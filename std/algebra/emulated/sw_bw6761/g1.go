@@ -243,14 +243,14 @@ func phi1(pr *Pairing, res, p *G1Affine) *G1Affine {
 	return res
 }
 
-func (p *G1Affine) AddAssign(pr *Pairing, p1 G1Affine) *G1Affine {
+func (p *G1Affine) AddAssign(pr *Pairing, q G1Affine) *G1Affine {
 	ba := pr.Fp
 
 	// compute lambda = (p1.y-p.y)/(p1.x-p.x)
-	lambda := ba.Mul(ba.Sub(&p1.Y, &p.Y), ba.Sub(&p1.X, &p.X))
+	lambda := ba.Div(ba.Sub(&q.Y, &p.Y), ba.Sub(&q.X, &p.X))
 
 	// xr = lambda**2-p.x-p1.x
-	xr := ba.Sub(ba.MulMod(lambda, lambda), ba.Add(&p.X, &p1.X))
+	xr := ba.Sub(ba.MulMod(lambda, lambda), ba.Add(&p.X, &q.X))
 
 	// p.y = lambda(p.x-xr) - p.y
 	p.Y = *ba.Sub(ba.Mul(lambda, ba.Sub(&p.X, xr)), &p.Y)

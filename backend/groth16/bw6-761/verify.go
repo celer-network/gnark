@@ -36,8 +36,14 @@ var (
 // Verify verifies a proof with given VerifyingKey and publicWitness
 func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 
+	fmt.Println("[verify] public witness:", publicWitness)
 	nbPublicVars := len(vk.G1.K)
+
+	fmt.Println("[verify] vk.G1.K0.x:", vk.G1.K[0].X)
+	fmt.Println("[verify] vk.G1.K0.y:", vk.G1.K[0].Y)
+
 	if vk.CommitmentInfo.Is() {
+		fmt.Println("[verify] need verify commitment, publicVar - 1")
 		nbPublicVars--
 	}
 	if len(publicWitness) != nbPublicVars-1 {
@@ -56,13 +62,19 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 
 	// compute (eKrsδ, eArBs)
 	go func() {
+		fmt.Println("[verify] Krs:", proof.Krs)
+		fmt.Println("[verify] Ar:", proof.Ar)
+		fmt.Println("[verify] vk.G2.deltaNeg:", vk.G2.deltaNeg)
+		fmt.Println("[verify]  proof.Bs:", proof.Bs)
 		var errML error
 		doubleML, errML = curve.MillerLoop([]curve.G1Affine{proof.Krs, proof.Ar}, []curve.G2Affine{vk.G2.deltaNeg, proof.Bs})
+		fmt.Println("[verify] doubleML:", doubleML)
 		chDone <- errML
 		close(chDone)
 	}()
 
 	if vk.CommitmentInfo.Is() {
+		fmt.Println("[verify] verify commitment")
 
 		if err := vk.CommitmentKey.Verify(proof.Commitment, proof.CommitmentPok); err != nil {
 			return err
@@ -94,10 +106,14 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 	var kSumAff curve.G1Affine
 	kSumAff.FromJacobian(&kSum)
 
+	fmt.Println("[verify] kSumAff", kSumAff)
+	fmt.Println("[verify] gammaNeg", vk.G2.gammaNeg)
+
 	right, err := curve.MillerLoop([]curve.G1Affine{kSumAff}, []curve.G2Affine{vk.G2.gammaNeg})
 	if err != nil {
 		return err
 	}
+	fmt.Println("[verify] e right:", right)
 
 	// wait for (eKrsδ, eArBs)
 	if err := <-chDone; err != nil {
@@ -105,6 +121,8 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 	}
 
 	right = curve.FinalExponentiation(&right, &doubleML)
+	fmt.Println("[verify] final Exp:", right)
+
 	if !vk.e.Equal(&right) {
 		return errPairingCheckFailed
 	}

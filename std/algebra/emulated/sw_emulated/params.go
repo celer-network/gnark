@@ -47,7 +47,7 @@ func GetBN254Params() CurveParams {
 		B:  big.NewInt(3),
 		Gx: g1aff.X.BigInt(new(big.Int)),
 		Gy: g1aff.Y.BigInt(new(big.Int)),
-		Gm: computeBN254Table(),
+		Gm: computeBW6761Table(),
 	}
 }
 
