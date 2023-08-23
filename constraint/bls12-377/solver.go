@@ -388,7 +388,7 @@ func (solver *solver) run() error {
 	// minWorkPerCPU is the minimum target number of constraint a task should hold
 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
 	// sequentially without sync.
-	const minWorkPerCPU = 10.0 // TODO @gbotrel revisit that with blocks.
+	const minWorkPerCPU = 50.0 // TODO @gbotrel revisit that with blocks.
 
 	// cs.Levels has a list of levels, where all constraints in a level l(n) are independent
 	// and may only have dependencies on previous levels
