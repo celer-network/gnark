@@ -97,7 +97,7 @@ func ProveOnlyWithSolver(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witn
 
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
-	fmt.Printf("end: wireValues: %d", len(wireValues))
+	fmt.Printf("end: wireValues: %d \n", len(wireValues))
 	return nil
 }
 

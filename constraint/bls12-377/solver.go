@@ -20,11 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	"github.com/consensys/gnark-crypto/field/pool"
 	"github.com/consensys/gnark/constraint"
 	csolver "github.com/consensys/gnark/constraint/solver"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"math"
 	"math/big"
 	"runtime"
@@ -32,9 +32,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 )
 
 // solver represent the state of the solver during a call to System.Solve(...)
@@ -429,8 +426,8 @@ func (solver *solver) run() error {
 	var scratch scratch
 
 	// for each level, we push the tasks
-	for levelIdx, level := range solver.Levels {
-		beginTime := time.Now()
+	for /*levelIdx*/ _, level := range solver.Levels {
+		//beginTime := time.Now()
 		// max CPU to use
 		maxCPU := float64(len(level)) / minWorkPerCPU
 
@@ -479,7 +476,7 @@ func (solver *solver) run() error {
 
 		// wait for the level to be done
 		wg.Wait()
-		log.Debug().Dur("took", time.Since(beginTime)).Msg(fmt.Sprintf("solver level %d done, level size: %d", levelIdx, len(level)))
+		//log.Debug().Dur("took", time.Since(beginTime)).Msg(fmt.Sprintf("solver level %d done, level size: %d", levelIdx, len(level)))
 		if len(chError) > 0 {
 			return <-chError
 		}
