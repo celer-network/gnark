@@ -171,7 +171,9 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 	if convert {
 		outHost := make([]PointBN254, 1)
 		cudawrapper.CudaMemCpyDtoH[PointBN254](outHost, out_d, 96)
-		return *outHost[0].ToGnarkJac(), nil, nil, timings
+		retPoint := *outHost[0].ToGnarkJac()
+		cudawrapper.CudaFree(out_d)
+		return retPoint, nil, nil, timings
 	}
 
 	return curve.G1Jac{}, out_d, nil, timings
@@ -187,7 +189,9 @@ func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, 
 	if convert {
 		outHost := make([]G2Point, 1)
 		cudawrapper.CudaMemCpyDtoH[G2Point](outHost, out_d, 192)
-		return *outHost[0].ToGnarkJac(), nil, nil, timings
+		retPoint := *outHost[0].ToGnarkJac()
+		cudawrapper.CudaFree(out_d)
+		return retPoint, nil, nil, timings
 	}
 
 	return curve.G2Jac{}, out_d, nil, timings
