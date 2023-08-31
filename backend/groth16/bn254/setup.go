@@ -18,6 +18,7 @@ package groth16
 
 import (
 	"fmt"
+	"github.com/ingonyama-zk/iciclegnark/curves/bn254"
 	"math"
 	"math/big"
 	"math/bits"
@@ -376,7 +377,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	denI.Exp(pk.Domain.FrMultiplicativeGen, big.NewInt(int64(pk.Domain.Cardinality)))
 	denI.Sub(&denI, &oneI).Inverse(&denI)
 
-	den_d, _ := goicicle.CudaMalloc(sizeBytes)
+	/*den_d, _ := goicicle.CudaMalloc(sizeBytes)
 	log2Size := int(math.Floor(math.Log2(float64(n))))
 	denIcicle := *NewFieldFromFrGnark[ScalarField](denI)
 	denIcicleArr := []ScalarField{denIcicle}
@@ -385,9 +386,20 @@ func (pk *ProvingKey) setupDevicePointers() {
 	}
 	for i := 0; i < (n - int(math.Pow(2, float64(log2Size)))); i++ {
 		denIcicleArr = append(denIcicleArr, denIcicle)
+	}*/
+
+	den_d, _ := goicicle.CudaMalloc(sizeBytes)
+	log2Size := int(math.Floor(math.Log2(float64(n))))
+	denIcicle := *bn254.NewFieldFromFrGnark[icicle.G1ScalarField](denI)
+	denIcicleArr := []icicle.G1ScalarField{denIcicle}
+	for i := 0; i < log2Size; i++ {
+		denIcicleArr = append(denIcicleArr, denIcicleArr...)
+	}
+	for i := 0; i < (n - int(math.Pow(2, float64(log2Size)))); i++ {
+		denIcicleArr = append(denIcicleArr, denIcicle)
 	}
 
-	goicicle.CudaMemCpyHtoD[ScalarField](den_d, denIcicleArr, sizeBytes)
+	goicicle.CudaMemCpyHtoD[icicle.G1ScalarField](den_d, denIcicleArr, sizeBytes)
 
 	pk.DenDevice = den_d
 
@@ -397,43 +409,32 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************     A      ***************************/
 	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
 	a_d, _ := goicicle.CudaMalloc(pointsBytesA)
-	iciclePointsA := BatchConvertFromG1Affine(pk.G1.A)
-	goicicle.CudaMemCpyHtoD[PointAffineNoInfinityBN254](a_d, iciclePointsA, pointsBytesA)
+	iciclePointsA := bn254.BatchConvertFromG1Affine(pk.G1.A)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](a_d, iciclePointsA, pointsBytesA)
 
 	pk.G1Device.A = a_d
 
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
 	b_d, _ := goicicle.CudaMalloc(pointsBytesB)
-	iciclePointsB := BatchConvertFromG1Affine(pk.G1.B)
-	goicicle.CudaMemCpyHtoD[PointAffineNoInfinityBN254](b_d, iciclePointsB, pointsBytesB)
+	iciclePointsB := bn254.BatchConvertFromG1Affine(pk.G1.B)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](b_d, iciclePointsB, pointsBytesB)
 
 	pk.G1Device.B = b_d
 
 	/*************************     K      ***************************/
-	//remove infinity points and save indices for removing scalars later
-	// TODO, find better way to save mem
-	var pointsNoInfinity []curve.G1Affine
-	for i, gnarkPoint := range pk.G1.K {
-		if gnarkPoint.IsInfinity() {
-			pk.G1InfPointIndices.K = append(pk.G1InfPointIndices.K, i)
-		} else {
-			pointsNoInfinity = append(pointsNoInfinity, gnarkPoint)
-		}
-	}
-
-	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
+	pointsBytesK := len(pk.G1.K) * fp.Bytes * 2
 	k_d, _ := goicicle.CudaMalloc(pointsBytesK)
-	iciclePointsK := BatchConvertFromG1Affine(pointsNoInfinity)
-	goicicle.CudaMemCpyHtoD[PointAffineNoInfinityBN254](k_d, iciclePointsK, pointsBytesK)
+	iciclePointsK := bn254.BatchConvertFromG1Affine(pk.G1.K)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](k_d, iciclePointsK, pointsBytesK)
 
 	pk.G1Device.K = k_d
 
 	/*************************     Z      ***************************/
 	pointsBytesZ := len(pk.G1.Z) * fp.Bytes * 2
 	z_d, _ := goicicle.CudaMalloc(pointsBytesZ)
-	iciclePointsZ := BatchConvertFromG1Affine(pk.G1.Z)
-	goicicle.CudaMemCpyHtoD[PointAffineNoInfinityBN254](z_d, iciclePointsZ, pointsBytesZ)
+	iciclePointsZ := bn254.BatchConvertFromG1Affine(pk.G1.Z)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](z_d, iciclePointsZ, pointsBytesZ)
 
 	pk.G1Device.Z = z_d
 	/*************************  End G1 Device Setup  ***************************/
@@ -441,8 +442,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	b2_d, _ := goicicle.CudaMalloc(pointsBytesB2)
-	iciclePointsB2 := BatchConvertFromG2Affine(pk.G2.B)
-	goicicle.CudaMemCpyHtoD[G2PointAffine](b2_d, iciclePointsB2, pointsBytesB2)
+	iciclePointsB2 := bn254.BatchConvertFromG2Affine(pk.G2.B)
+	goicicle.CudaMemCpyHtoD[icicle.G2PointAffine](b2_d, iciclePointsB2, pointsBytesB2)
 	pk.G2Device.B = b2_d
 	/*************************  End G2 Device Setup  ***************************/
 
