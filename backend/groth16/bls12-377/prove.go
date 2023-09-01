@@ -27,7 +27,7 @@ import (
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/goicicle"
-	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bn254"
+	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
 	"time"
 	"unsafe"
