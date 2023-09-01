@@ -335,6 +335,7 @@ func Setup(r1cs *cs.R1CS, pk *ProvingKey, vk *VerifyingKey) error {
 }
 
 func (pk *ProvingKey) setupDevicePointers() {
+	fmt.Println("start setupDevicePointers")
 	n := int(pk.Domain.Cardinality)
 	sizeBytes := n * fr.Bytes
 
