@@ -414,6 +414,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************     K      ***************************/
 	//remove infinity points and save indices for removing scalars later
 	// TODO, find better way to save mem
+	//remove infinity points and save indices for removing scalars later
+	// TODO, find better way to save mem
 	var pointsNoInfinity []curve.G1Affine
 	for i, gnarkPoint := range pk.G1.K {
 		if gnarkPoint.IsInfinity() {
@@ -423,9 +425,9 @@ func (pk *ProvingKey) setupDevicePointers() {
 		}
 	}
 
-	pointsBytesK := len(pk.G1.K) * fp.Bytes * 2
+	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
 	k_d, _ := goicicle.CudaMalloc(pointsBytesK)
-	iciclePointsK := bn254.BatchConvertFromG1Affine(pk.G1.K)
+	iciclePointsK := bn254.BatchConvertFromG1Affine(pointsNoInfinity)
 	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](k_d, iciclePointsK, pointsBytesK)
 
 	pk.G1Device.K = k_d
