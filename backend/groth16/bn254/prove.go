@@ -28,7 +28,9 @@ import (
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/ingonyama-zk/icicle/goicicle"
 	"math/big"
+	"reflect"
 	"runtime"
 	"time"
 )
@@ -116,6 +118,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB []fr.Element
+	var wireValuesADevice, wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
@@ -127,6 +130,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesA[j] = wireValues[i]
 			j++
 		}
+
+		wireValuesASize := len(wireValuesA)
+		scalarBytes := wireValuesASize * fr.Bytes
+		wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
+		MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
+		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
+
 		close(chWireValuesA)
 	}()
 	go func() {
@@ -138,6 +149,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesB[j] = wireValues[i]
 			j++
 		}
+
+		wireValuesBSize := len(wireValuesB)
+		scalarBytes := wireValuesBSize * fr.Bytes
+		wireValuesBDevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesBDevicePtr, wireValuesB, scalarBytes)
+		MontConvOnDevice(wireValuesBDevicePtr, wireValuesBSize, false)
+		wireValuesBDevice = OnDeviceData{wireValuesBDevicePtr, wireValuesBSize}
+
 		close(chWireValuesB)
 	}()
 
@@ -170,6 +189,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			close(chBs1Done)
 			return
 		}
+
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
+		fmt.Printf("icicleRes == bs1: %+v \n", reflect.DeepEqual(icicleRes, bs1))
+
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
 		chBs1Done <- nil
@@ -183,6 +206,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			close(chArDone)
 			return
 		}
+
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		fmt.Printf("icicleRes == ar: %+v \n", reflect.DeepEqual(icicleRes, ar))
+
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
