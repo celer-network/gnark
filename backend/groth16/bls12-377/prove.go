@@ -28,9 +28,13 @@ import (
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/ingonyama-zk/icicle/goicicle"
+	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
+	"reflect"
 	"runtime"
 	"time"
+	"unsafe"
 )
 
 // Proof represents a Groth16 proof that was encoded with a ProvingKey and can be verified
@@ -104,9 +108,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
+	var h_cuda unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		h_cuda = computeHWithCuda(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -116,6 +122,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB []fr.Element
+	var wireValuesADevice, wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
@@ -127,6 +134,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesA[j] = wireValues[i]
 			j++
 		}
+
+		wireValuesASize := len(wireValuesA)
+		scalarBytes := wireValuesASize * fr.Bytes
+		wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
+		MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
+		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
+
 		close(chWireValuesA)
 	}()
 	go func() {
@@ -138,6 +153,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesB[j] = wireValues[i]
 			j++
 		}
+
+		wireValuesBSize := len(wireValuesB)
+		scalarBytes := wireValuesBSize * fr.Bytes
+		wireValuesBDevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesBDevicePtr, wireValuesB, scalarBytes)
+		MontConvOnDevice(wireValuesBDevicePtr, wireValuesBSize, false)
+		wireValuesBDevice = OnDeviceData{wireValuesBDevicePtr, wireValuesBSize}
+
 		close(chWireValuesB)
 	}()
 
@@ -170,6 +193,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			close(chBs1Done)
 			return
 		}
+
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
+		fmt.Printf("icicleRes == bs1 ? : %+v", reflect.DeepEqual(bs1, icicleRes))
+
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
 		chBs1Done <- nil
@@ -183,6 +210,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			close(chArDone)
 			return
 		}
+
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		fmt.Printf("icicleRes == ar ? : %+v", reflect.DeepEqual(ar, icicleRes))
+
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
@@ -199,6 +230,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
 			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+
+			icicleRes, _, _, _ := MsmOnDevice(h_cuda, pk.G1Device.Z, sizeH, 10, true)
+			fmt.Printf("icicleRes == krs2 ? : %+v", reflect.DeepEqual(krs2, icicleRes))
+
 			chKrs2Done <- err
 		}()
 
@@ -351,4 +386,85 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
 
 	return a
+}
+
+func computeHWithCuda(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+
+	n := len(a)
+
+	// add padding to ensure input length is domain cardinality
+	padding := make([]fr.Element, int(pk.Domain.Cardinality)-n)
+	a = append(a, padding...)
+	b = append(b, padding...)
+	c = append(c, padding...)
+	n = len(a)
+
+	sizeBytes := n * fr.Bytes
+
+	log := logger.Logger()
+
+	/*********** Copy a,b,c to Device Start ************/
+	computeHTime := time.Now()
+	copyADone := make(chan unsafe.Pointer, 1)
+	copyBDone := make(chan unsafe.Pointer, 1)
+	copyCDone := make(chan unsafe.Pointer, 1)
+
+	convTime := time.Now()
+	go CopyToDevice(a, sizeBytes, copyADone)
+	go CopyToDevice(b, sizeBytes, copyBDone)
+	go CopyToDevice(c, sizeBytes, copyCDone)
+
+	a_device := <-copyADone
+	b_device := <-copyBDone
+	c_device := <-copyCDone
+
+	log.Debug().Dur("took", time.Since(convTime)).Msg("Icicle API: Conv and Copy a,b,c")
+	/*********** Copy a,b,c to Device End ************/
+
+	computeInttNttDone := make(chan error, 1)
+	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
+		a_intt_d, timings_a := INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		log.Debug().Dur("took", timings_a[0]).Msg("Icicle API: INTT Reverse")
+		log.Debug().Dur("took", timings_a[1]).Msg("Icicle API: INTT Interp")
+
+		timing_a2 := NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		log.Debug().Dur("took", timing_a2[1]).Msg("Icicle API: NTT Coset Reverse")
+		log.Debug().Dur("took", timing_a2[0]).Msg("Icicle API: NTT Coset Eval")
+
+		computeInttNttDone <- nil
+
+		goicicle.CudaFree(a_intt_d)
+	}
+
+	computeInttNttTime := time.Now()
+	go computeInttNttOnDevice(a_device)
+	go computeInttNttOnDevice(b_device)
+	go computeInttNttOnDevice(c_device)
+	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
+	log.Debug().Dur("took", time.Since(computeInttNttTime)).Msg("Icicle API: INTT and NTT")
+
+	poltime := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	log.Debug().Dur("took", poltime[0]).Msg("Icicle API: PolyOps Mul a b")
+	log.Debug().Dur("took", poltime[1]).Msg("Icicle API: PolyOps Sub a c")
+	log.Debug().Dur("took", poltime[2]).Msg("Icicle API: PolyOps Mul a den")
+
+	h, timings_final := INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	log.Debug().Dur("took", timings_final[0]).Msg("Icicle API: INTT Coset Reverse")
+	log.Debug().Dur("took", timings_final[1]).Msg("Icicle API: INTT Coset Interp")
+
+	go func() {
+		goicicle.CudaFree(a_device)
+		goicicle.CudaFree(b_device)
+		goicicle.CudaFree(c_device)
+	}()
+
+	icicle.ReverseScalars(h, n)
+	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
+
+	return h
 }
