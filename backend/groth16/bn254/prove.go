@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark/backend"
@@ -190,9 +191,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, false)
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
 		fmt.Printf("icicleRes == bs1: %+v \n", reflect.DeepEqual(icicleRes, bs1))
-		fmt.Printf("icicleRes == bs1: %+v %+v \n", icicleRes, bs1)
+		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", icicleRes, bs1)
+		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", toMontFp(&icicleRes.X), bs1)
 
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
@@ -208,9 +210,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, false)
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
 		fmt.Printf("icicleRes == ar: %+v \n", reflect.DeepEqual(icicleRes, ar))
-		fmt.Printf("icicleRes == ar: %+v %+v\n", icicleRes, ar)
+		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", icicleRes, ar)
+		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", toMontFp(&icicleRes.X), ar)
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
@@ -380,4 +383,15 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
 
 	return a
+}
+
+var rSquare = fp.Element{
+	17522657719365597833,
+	13107472804851548667,
+	5164255478447964150,
+	493319470278259999,
+}
+
+func toMontFp(z *fp.Element) *fp.Element {
+	return z.Mul(z, &rSquare)
 }
