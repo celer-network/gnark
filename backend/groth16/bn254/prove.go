@@ -194,7 +194,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
 		fmt.Printf("icicleRes == bs1: %+v \n", reflect.DeepEqual(icicleRes, bs1))
 		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", icicleRes, bs1)
-		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", toMontFp(&icicleRes.X), bs1)
+		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", *toMontFp(&icicleRes.X), bs1)
 
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
@@ -213,7 +213,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
 		fmt.Printf("icicleRes == ar: %+v \n", reflect.DeepEqual(icicleRes, ar))
 		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", icicleRes, ar)
-		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", toMontFp(&icicleRes.X), ar)
+		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", *toMontFp(&icicleRes.X), ar)
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
