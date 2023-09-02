@@ -183,6 +183,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
+		fmt.Printf("icicleRes bs1: %+v", icicleRes)
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
@@ -194,6 +195,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+		fmt.Printf("icicleRes ar: %+v", icicleRes)
 
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
