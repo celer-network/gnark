@@ -190,7 +190,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, false)
 		fmt.Printf("icicleRes == bs1: %+v \n", reflect.DeepEqual(icicleRes, bs1))
 		fmt.Printf("icicleRes == bs1: %+v %+v \n", icicleRes, bs1)
 
@@ -208,7 +208,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, false)
 		fmt.Printf("icicleRes == ar: %+v \n", reflect.DeepEqual(icicleRes, ar))
 		fmt.Printf("icicleRes == ar: %+v %+v\n", icicleRes, ar)
 
