@@ -31,7 +31,6 @@ import (
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/goicicle"
 	"math/big"
-	"reflect"
 	"runtime"
 	"time"
 )
@@ -192,7 +191,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 
 		icicleRes, _, _, _ := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
-		fmt.Printf("icicleRes == bs1: %+v \n", reflect.DeepEqual(icicleRes, bs1))
+		fmt.Printf("icicleRes == bs1: %+v \n", icicleRes.Equal(&bs1))
 		fmt.Printf("icicleRes == bs1: \n %+v \n %+v \n", icicleRes, bs1)
 
 		bs1.AddMixed(&pk.G1.Beta)
@@ -210,7 +209,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 
 		icicleRes, _, _, _ := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
-		fmt.Printf("icicleRes == ar: %+v \n", reflect.DeepEqual(icicleRes, ar))
+		fmt.Printf("icicleRes == ar: %+v \n", icicleRes.Equal(&ar))
 		fmt.Printf("icicleRes == ar: \n %+v \n %+v \n", icicleRes, ar)
 
 		ar.AddMixed(&pk.G1.Alpha)
