@@ -107,10 +107,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
-	var hOnDevice unsafe.Pointer
+	//var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		//hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
@@ -232,9 +232,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		go func() {
 			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
 
-			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+			/*icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
 			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-			fmt.Printf("icicleRes == krs2 %+v \n", icicleRes.Equal(&krs2))
+			fmt.Printf("icicleRes == krs2 %+v \n", icicleRes.Equal(&krs2))*/
 
 			chKrs2Done <- err
 		}()
@@ -259,9 +259,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		/*icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-		fmt.Printf("icicleRes == krs %+v \n", icicleRes.Equal(&krs))
+		fmt.Printf("icicleRes == krs %+v \n", icicleRes.Equal(&krs))*/
 
 		krs.AddMixed(&deltas[2])
 		n := 3
