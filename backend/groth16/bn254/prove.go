@@ -244,7 +244,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-		scals := _wireValues[r1cs.GetNbPublicVariables():]
+		/*scals := _wireValues[r1cs.GetNbPublicVariables():]
 
 		// Filter scalars matching infinity point indices
 		for _, indexToRemove := range pk.G1InfPointIndices.K {
@@ -254,7 +254,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		scalarBytes := len(scals) * fr.Bytes
 		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
 		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
-		MontConvOnDevice(scalars_d, len(scals), false)
+		MontConvOnDevice(scalars_d, len(scals), false)*/
 
 		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
 			chKrsDone <- err
