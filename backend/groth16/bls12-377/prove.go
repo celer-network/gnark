@@ -29,9 +29,11 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/goicicle"
+	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
 	"runtime"
 	"time"
+	"unsafe"
 )
 
 // Proof represents a Groth16 proof that was encoded with a ProvingKey and can be verified
@@ -105,9 +107,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
+	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -227,16 +231,37 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
 			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+
+			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+			fmt.Printf("icicleRes == krs2: %+v \n", icicleRes.Equal(&krs2))
+
 			chKrs2Done <- err
 		}()
 
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
+		scals := _wireValues[r1cs.GetNbPublicVariables():]
+		// Filter scalars matching infinity point indices
+		for _, indexToRemove := range pk.G1InfPointIndices.K {
+			scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+		}
+		scalarBytes := len(scals) * fr.Bytes
+		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+		MontConvOnDevice(scalars_d, len(scals), false)
+
 		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
 			chKrsDone <- err
 			return
 		}
+
+		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+		goicicle.CudaFree(scalars_d)
+		fmt.Printf("icicleRes == krs: %+v \n", icicleRes.Equal(&krs))
+
 		krs.AddMixed(&deltas[2])
 		n := 3
 		for n != 0 {
@@ -383,4 +408,85 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
 
 	return a
+}
+
+func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+
+	n := len(a)
+
+	// add padding to ensure input length is domain cardinality
+	padding := make([]fr.Element, int(pk.Domain.Cardinality)-n)
+	a = append(a, padding...)
+	b = append(b, padding...)
+	c = append(c, padding...)
+	n = len(a)
+
+	sizeBytes := n * fr.Bytes
+
+	log := logger.Logger()
+
+	/*********** Copy a,b,c to Device Start ************/
+	computeHTime := time.Now()
+	copyADone := make(chan unsafe.Pointer, 1)
+	copyBDone := make(chan unsafe.Pointer, 1)
+	copyCDone := make(chan unsafe.Pointer, 1)
+
+	convTime := time.Now()
+	go CopyToDevice(a, sizeBytes, copyADone)
+	go CopyToDevice(b, sizeBytes, copyBDone)
+	go CopyToDevice(c, sizeBytes, copyCDone)
+
+	a_device := <-copyADone
+	b_device := <-copyBDone
+	c_device := <-copyCDone
+
+	log.Debug().Dur("took", time.Since(convTime)).Msg("Icicle API: Conv and Copy a,b,c")
+	/*********** Copy a,b,c to Device End ************/
+
+	computeInttNttDone := make(chan error, 1)
+	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
+		a_intt_d, timings_a := INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		log.Debug().Dur("took", timings_a[0]).Msg("Icicle API: INTT Reverse")
+		log.Debug().Dur("took", timings_a[1]).Msg("Icicle API: INTT Interp")
+
+		timing_a2 := NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		log.Debug().Dur("took", timing_a2[1]).Msg("Icicle API: NTT Coset Reverse")
+		log.Debug().Dur("took", timing_a2[0]).Msg("Icicle API: NTT Coset Eval")
+
+		computeInttNttDone <- nil
+
+		goicicle.CudaFree(a_intt_d)
+	}
+
+	computeInttNttTime := time.Now()
+	go computeInttNttOnDevice(a_device)
+	go computeInttNttOnDevice(b_device)
+	go computeInttNttOnDevice(c_device)
+	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
+	log.Debug().Dur("took", time.Since(computeInttNttTime)).Msg("Icicle API: INTT and NTT")
+
+	poltime := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	log.Debug().Dur("took", poltime[0]).Msg("Icicle API: PolyOps Mul a b")
+	log.Debug().Dur("took", poltime[1]).Msg("Icicle API: PolyOps Sub a c")
+	log.Debug().Dur("took", poltime[2]).Msg("Icicle API: PolyOps Mul a den")
+
+	h, timings_final := INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	log.Debug().Dur("took", timings_final[0]).Msg("Icicle API: INTT Coset Reverse")
+	log.Debug().Dur("took", timings_final[1]).Msg("Icicle API: INTT Coset Interp")
+
+	go func() {
+		goicicle.CudaFree(a_device)
+		goicicle.CudaFree(b_device)
+		goicicle.CudaFree(c_device)
+	}()
+
+	icicle.ReverseScalars(h, n)
+	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
+
+	return h
 }
