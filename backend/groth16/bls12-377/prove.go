@@ -110,8 +110,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -242,11 +242,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-		scals := _wireValues[r1cs.GetNbPublicVariables():]
+		scals := make([]fr.Element, len(_wireValues[r1cs.GetNbPublicVariables():]))
+		copy(scals, _wireValues[r1cs.GetNbPublicVariables():])
+
 		// Filter scalars matching infinity point indices
 		for _, indexToRemove := range pk.G1InfPointIndices.K {
 			scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
 		}
+
 		scalarBytes := len(scals) * fr.Bytes
 		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
 		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
