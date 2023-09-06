@@ -262,9 +262,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		/*icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))*/
+		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
 
 		krs.AddMixed(&deltas[2])
 		n := 3
