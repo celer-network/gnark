@@ -244,10 +244,26 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
+		scals := _wireValues[r1cs.GetNbPublicVariables():]
+
+		// Filter scalars matching infinity point indices
+		for _, indexToRemove := range pk.G1InfPointIndices.K {
+			scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+		}
+
+		scalarBytes := len(scals) * fr.Bytes
+		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+		MontConvOnDevice(scalars_d, len(scals), false)
+
 		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
 			chKrsDone <- err
 			return
 		}
+
+		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
 
 		krs.AddMixed(&deltas[2])
 		n := 3
@@ -297,7 +313,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
-		fmt.Printf("icicleRes == bs1, %v \n", icicleG2Res.Equal(&Bs))
+		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
