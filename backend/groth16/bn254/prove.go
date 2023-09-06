@@ -57,6 +57,8 @@ func (proof *Proof) CurveID() ecc.ID {
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
+	pk_for_gpu := *pk
+
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, err
@@ -107,10 +109,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
-	//var hOnDevice unsafe.Pointer
+	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		/*hOnDevice =*/ computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, &pk_for_gpu)
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
@@ -231,6 +233,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
 			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+
+			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, int(pk_for_gpu.Domain.Cardinality-1), 10, true)
+			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+			fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
+
 			chKrs2Done <- err
 		}()
 
