@@ -110,8 +110,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -195,7 +195,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timeing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timeing).Msg("Icicle API: MSM BS1 MSM")
-		fmt.Printf("icicleRes == bs1 %+v", icicleRes.Equal(&bs1))
+		fmt.Printf("icicleRes == bs1 %+v \n", icicleRes.Equal(&bs1))
 
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
@@ -213,7 +213,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-		fmt.Printf("icicleRes == ar %+v", icicleRes.Equal(&ar))
+		fmt.Printf("icicleRes == ar %+v \n", icicleRes.Equal(&ar))
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
@@ -234,7 +234,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
 			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-			fmt.Printf("icicleRes == krs2 %+v", icicleRes.Equal(&krs2))
+			fmt.Printf("icicleRes == krs2 %+v \n", icicleRes.Equal(&krs2))
 
 			chKrs2Done <- err
 		}()
@@ -261,7 +261,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-		fmt.Printf("icicleRes == krs %+v", icicleRes.Equal(&krs))
+		fmt.Printf("icicleRes == krs %+v \n", icicleRes.Equal(&krs))
 
 		krs.AddMixed(&deltas[2])
 		n := 3
@@ -311,7 +311,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
-		fmt.Printf("icicleG2Res == Bs %+v", icicleG2Res.Equal(&Bs))
+		fmt.Printf("icicleG2Res == Bs %+v \n", icicleG2Res.Equal(&Bs))
 
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
