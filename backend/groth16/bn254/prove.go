@@ -174,7 +174,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
+
+	bmsStart := time.Now()
+	fmt.Printf("start BatchScalarMultiplicationG1 %s \n", bmsStart.String())
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	bmsEnd := time.Now()
+	fmt.Printf("end BatchScalarMultiplicationG1 %s dur:%d \n", bmsEnd.String(), bmsEnd.UnixMilli()-bmsStart.UnixMilli())
 
 	var bs1, ar curve.G1Jac
 
