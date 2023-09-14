@@ -52,6 +52,62 @@ func (proof *Proof) CurveID() ecc.ID {
 	return curve.ID
 }
 
+func SingleSolver(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) error {
+	opt, err := backend.NewProverConfig(opts...)
+	if err != nil {
+		return err
+	}
+
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+
+	proof := &Proof{}
+
+	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
+
+	start := time.Now()
+	if r1cs.CommitmentInfo.Is() {
+		fmt.Printf("has r1cs.CommitmentInfo \n")
+		solverOpts = append(solverOpts, solver.OverrideHint(r1cs.CommitmentInfo.HintID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
+			// Perf-TODO: Converting these values to big.Int and back may be a performance bottleneck.
+			// If that is the case, figure out a way to feed the solution vector into this function
+			if len(in) != r1cs.CommitmentInfo.NbCommitted() { // TODO: Remove
+				return fmt.Errorf("unexpected number of committed variables")
+			}
+			values := make([]fr.Element, r1cs.CommitmentInfo.NbPrivateCommitted)
+			nbPublicCommitted := len(in) - len(values)
+			inPrivate := in[nbPublicCommitted:]
+			for i, inI := range inPrivate {
+				values[i].SetBigInt(inI)
+			}
+
+			var err error
+			proof.Commitment, proof.CommitmentPok, err = pk.CommitmentKey.Commit(values)
+			if err != nil {
+				return err
+			}
+
+			var res fr.Element
+			res, err = solveCommitmentWire(&r1cs.CommitmentInfo, &proof.Commitment, in[:r1cs.CommitmentInfo.NbPublicCommitted()])
+			res.BigInt(out[0])
+			return err
+		}))
+	}
+
+	log.Debug().Dur("took", time.Since(start)).Msg("solverOpts done")
+
+	start = time.Now()
+	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
+	if err != nil {
+		return err
+	}
+
+	solution := _solution.(*cs.R1CSSolution)
+	wireValues := []fr.Element(solution.W)
+
+	fmt.Printf("wireValues len: %d \n", len(wireValues))
+	return nil
+}
+
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
