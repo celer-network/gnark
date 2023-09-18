@@ -207,10 +207,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var bs1, ar curve.G1Jac
 
 	computeBS1 := func() {
-		<-chWireValuesB
-
-		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
+		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
@@ -298,7 +296,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// schedule our proof part computations
 	startMSM := time.Now()
+
+	<-chWireValuesB
+	if wireValuesBDeviceErr != nil {
+		return nil, wireValuesBDeviceErr
+	}
 	computeBS1()
+
+	<-chWireValuesA
+	if wireValuesADeviceErr != nil {
+		return nil, wireValuesADeviceErr
+	}
+
 	computeAR1()
 	computeKRS()
 	if err := computeBS2(); err != nil {
