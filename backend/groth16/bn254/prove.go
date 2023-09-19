@@ -106,13 +106,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
-	chHDone := make(chan struct{}, 1)
+	chHDone := make(chan error, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		var computeHErr error
+		h, computeHErr = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
-		chHDone <- struct{}{}
+		chHDone <- computeHErr
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -320,7 +321,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	// wait for FFT to end, as it uses all our CPUs
-	<-chHDone
+	chHErr := <-chHDone
+	if chHErr != nil {
+		return nil, chHErr
+	}
 
 	// schedule our proof part computations
 	startMSM := time.Now()
@@ -388,7 +392,7 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	return r
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -410,18 +414,32 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	/*********** Copy a,b,c to Device Start ************/
 	computeHTime := time.Now()
-	copyADone := make(chan unsafe.Pointer, 1)
-	copyBDone := make(chan unsafe.Pointer, 1)
-	copyCDone := make(chan unsafe.Pointer, 1)
+	copyADone := make(chan CopyToDeviceRes, 1)
+	copyBDone := make(chan CopyToDeviceRes, 1)
+	copyCDone := make(chan CopyToDeviceRes, 1)
 
 	convTime := time.Now()
 	go CopyToDevice(a, sizeBytes, copyADone)
 	go CopyToDevice(b, sizeBytes, copyBDone)
 	go CopyToDevice(c, sizeBytes, copyCDone)
 
-	a_device := <-copyADone
-	b_device := <-copyBDone
-	c_device := <-copyCDone
+	resA := <-copyADone
+	resB := <-copyBDone
+	resC := <-copyCDone
+
+	if resA.err != nil {
+		return nil, resA.err
+	}
+	if resB.err != nil {
+		return nil, resB.err
+	}
+	if resC.err != nil {
+		return nil, resC.err
+	}
+
+	a_device := resA.devicePtr
+	b_device := resB.devicePtr
+	c_device := resC.devicePtr
 
 	log.Debug().Dur("took", time.Since(convTime)).Msg("Icicle API: Conv and Copy a,b,c")
 	/*********** Copy a,b,c to Device End ************/
@@ -466,5 +484,5 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	icicle.ReverseScalars(h, n)
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
-	return h
+	return h, nil
 }

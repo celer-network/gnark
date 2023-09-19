@@ -138,10 +138,29 @@ func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, 
 	return curve.G2Jac{}, out_d, nil, timings
 }
 
-func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
-	devicePtr, _ := cudawrapper.CudaMalloc(bytes)
-	cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
-	MontConvOnDevice(devicePtr, len(scalars), false)
+type CopyToDeviceRes struct {
+	devicePtr unsafe.Pointer
+	err       error
+}
 
-	copyDone <- devicePtr
+// TODO, if error, should release cuda mem?
+func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan CopyToDeviceRes) {
+	defer close(copyDone)
+	res := CopyToDeviceRes{}
+	res.devicePtr, res.err = cudawrapper.CudaMalloc(bytes)
+	if res.err != nil {
+		copyDone <- res
+		return
+	}
+	cpyRet := cudawrapper.CudaMemCpyHtoD[fr.Element](res.devicePtr, scalars, bytes)
+	if cpyRet == -1 {
+		res.err = fmt.Errorf("CopyToDevice cpy fail with -1")
+		copyDone <- res
+		return
+	}
+	res.err = MontConvOnDevice(res.devicePtr, len(scalars), false)
+	if res.err != nil {
+		copyDone <- res
+		return
+	}
 }
