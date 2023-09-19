@@ -151,6 +151,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
 	}()
+
 	go func() {
 		defer close(chWireValuesB)
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
@@ -185,10 +186,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// sample random r and s
 	var r, s big.Int
 	var _r, _s, _kr fr.Element
-	if _, err := _r.SetRandom(); err != nil {
+	if _, err = _r.SetRandom(); err != nil {
 		return nil, err
 	}
-	if _, err := _s.SetRandom(); err != nil {
+	if _, err = _s.SetRandom(); err != nil {
 		return nil, err
 	}
 	_kr.Mul(&_r, &_s).Neg(&_kr)
@@ -258,9 +259,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 
 		scalarBytes := len(scals) * fr.Bytes
-		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
-		MontConvOnDevice(scalars_d, len(scals), false)
+		scalars_d, cmErr := goicicle.CudaMalloc(scalarBytes)
+		if cmErr != nil {
+			return cmErr
+		}
+		cpyRet := goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+		if cpyRet == -1 {
+			return fmt.Errorf("krs2 cpy err -1")
+		}
+		convErr := MontConvOnDevice(scalars_d, len(scals), false)
+		if convErr != nil {
+			return convErr
+		}
 
 		icicleRes, _, msmErr, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
@@ -268,7 +278,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return msmErr
 		}
 
-		goicicle.CudaFree(scalars_d)
+		freeRet := goicicle.CudaFree(scalars_d)
+		if freeRet == -1 {
+			return fmt.Errorf("krs free err -1")
+		}
 
 		krs = icicleRes
 		krs.AddMixed(&deltas[2])
@@ -341,7 +354,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
-
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
 
 	go func() {
