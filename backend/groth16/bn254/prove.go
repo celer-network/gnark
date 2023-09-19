@@ -183,7 +183,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
+	computeBS1Chan := make(chan struct{}, 1)
 	computeBS1 := func() {
+		defer close(computeBS1Chan)
+
 		<-chWireValuesB
 
 		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
@@ -195,7 +198,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		bs1.AddMixed(&deltas[1])
 	}
 
+	computeAR1Chan := make(chan struct{}, 1)
 	computeAR1 := func() {
+		defer close(computeAR1Chan)
 		<-chWireValuesA
 
 		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
@@ -208,7 +213,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		proof.Ar.FromJacobian(&ar)
 	}
 
+	computeKRSChan := make(chan struct{}, 1)
 	computeKRS := func() {
+		defer close(computeKRSChan)
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
@@ -245,16 +252,20 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		krs.AddAssign(&krs2)
 
+		<-computeAR1Chan
 		p1.ScalarMultiplication(&ar, &s)
 		krs.AddAssign(&p1)
 
+		<-computeBS1Chan
 		p1.ScalarMultiplication(&bs1, &r)
 		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
 	}
 
+	computeBS2Chan := make(chan struct{}, 1)
 	computeBS2 := func() error {
+		defer close(computeBS2Chan)
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
@@ -278,14 +289,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// schedule our proof part computations
 	startMSM := time.Now()
-	computeBS1()
-	computeAR1()
-	computeKRS()
-	if err := computeBS2(); err != nil {
-		return nil, err
-	}
-	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
+	go computeBS1()
+	go computeAR1()
+	go computeKRS()
+	go computeBS2()
 
+	<-computeKRSChan
+	<-computeBS2Chan
+
+	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
 
 	go func() {
