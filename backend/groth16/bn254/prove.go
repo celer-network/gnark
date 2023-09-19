@@ -174,7 +174,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	deltasChan := make(chan struct{}, 1)
+	var deltas []curve.G1Affine
+	go func() {
+		defer close(deltasChan)
+		deltas = curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	}()
 
 	var bs1, ar curve.G1Jac
 
@@ -186,6 +191,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
+		<-deltasChan
 		bs1.AddMixed(&deltas[1])
 	}
 
@@ -197,6 +203,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
+		<-deltasChan
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
 	}
@@ -233,6 +240,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		goicicle.CudaFree(scalars_d)
 
 		krs = icicleRes
+		<-deltasChan
 		krs.AddMixed(&deltas[2])
 
 		krs.AddAssign(&krs2)
