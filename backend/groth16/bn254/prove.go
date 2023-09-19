@@ -206,36 +206,45 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	computeBS1 := func() {
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+	computeBS1 := func() error {
+		icicleRes, _, msmErr, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
+		if msmErr != nil {
+			return msmErr
+		}
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
+		return nil
 	}
 
-	computeAR1 := func() {
-		<-chWireValuesA
-
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
+	computeAR1 := func() error {
+		icicleRes, _, msmErr, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+		if msmErr != nil {
+			return msmErr
+		}
 
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
+		return nil
 	}
 
-	computeKRS := func() {
+	computeKRS := func() error {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
 		var krs, krs2, p1 curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
-		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
+		icicleRes, _, msmErr, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+		if msmErr != nil {
+			return msmErr
+		}
 
 		krs2 = icicleRes
 		// filter the wire values if needed;
@@ -253,8 +262,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
 		MontConvOnDevice(scalars_d, len(scals), false)
 
-		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
+		icicleRes, _, msmErr, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+		if msmErr != nil {
+			return msmErr
+		}
 
 		goicicle.CudaFree(scalars_d)
 
@@ -270,16 +282,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
+
+		return nil
 	}
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
-		<-chWireValuesB
-
-		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		icicleG2Res, _, msmErr, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+		if msmErr != nil {
+			return msmErr
+		}
 
 		Bs = icicleG2Res
 		deltaS.FromAffine(&pk.G2.Delta)
@@ -301,18 +316,30 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if wireValuesBDeviceErr != nil {
 		return nil, wireValuesBDeviceErr
 	}
-	computeBS1()
+	err = computeBS1() // need device B
+	if err != nil {
+		return nil, err
+	}
 
 	<-chWireValuesA
 	if wireValuesADeviceErr != nil {
 		return nil, wireValuesADeviceErr
 	}
-
-	computeAR1()
-	computeKRS()
-	if err := computeBS2(); err != nil {
+	err = computeAR1() // need device B
+	if err != nil {
 		return nil, err
 	}
+
+	err = computeKRS() // need device Z, K
+	if err != nil {
+		return nil, err
+	}
+
+	err = computeBS2() // need device B
+	if err != nil {
+		return nil, err
+	}
+
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")

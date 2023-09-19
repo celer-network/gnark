@@ -90,17 +90,29 @@ func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Dura
 
 func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G1Jac, unsafe.Pointer, error, time.Duration) {
 	g1ProjPointBytes := fp.Bytes * 3
-	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
+	out_d, err := cudawrapper.CudaMalloc(g1ProjPointBytes)
+	if err != nil {
+		return curve.G1Jac{}, nil, err, time.Since(time.Now())
+	}
 
 	msmTime := time.Now()
-	icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
+	ret := icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
 	timings := time.Since(msmTime)
+	if ret == -1 {
+		return curve.G1Jac{}, nil, fmt.Errorf("fail to do icicle.Commit in MsmOnDevice, return with -1"), time.Since(time.Now())
+	}
 
 	if convert {
 		outHost := make([]icicle.G1ProjectivePoint, 1)
-		cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
+		ret = cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
+		if ret == -1 {
+			return curve.G1Jac{}, nil, fmt.Errorf("fail to do CudaMemCpyDtoH in MsmOnDevice, return with -1"), time.Since(time.Now())
+		}
 		retPoint := *bn254.G1ProjectivePointToGnarkJac(&outHost[0])
-		cudawrapper.CudaFree(out_d)
+		ret = cudawrapper.CudaFree(out_d)
+		if ret == -1 {
+			return curve.G1Jac{}, nil, fmt.Errorf("fail to do CudaFree in MsmOnDevice, return with -1"), time.Since(time.Now())
+		}
 		return retPoint, nil, nil, timings
 	}
 
