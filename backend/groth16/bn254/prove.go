@@ -200,15 +200,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// computes r[δ], s[δ], kr[δ]
 
-	bmsStart := time.Now()
-	fmt.Printf("start BatchScalarMultiplicationG1 %s \n", bmsStart.String())
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
-	bmsEnd := time.Now()
-	fmt.Printf("end BatchScalarMultiplicationG1 %s dur:%d \n", bmsEnd.String(), bmsEnd.UnixMilli()-bmsStart.UnixMilli())
+	var deltas []curve.G1Affine
+	deltasChan := make(chan struct{}, 1)
+
+	go func() {
+		deltas = curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+		close(deltasChan)
+	}()
 
 	var bs1, ar curve.G1Jac
 
+	computeBS1Chan := make(chan struct{}, 1)
 	computeBS1 := func() error {
+		defer close(computeBS1Chan)
 		icicleRes, _, msmErr, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
 		if msmErr != nil {
@@ -217,11 +221,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
+		<-deltasChan
 		bs1.AddMixed(&deltas[1])
 		return nil
 	}
 
+	computeAR1Chan := make(chan struct{}, 1)
 	computeAR1 := func() error {
+		defer close(computeAR1Chan)
 		icicleRes, _, msmErr, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
 		if msmErr != nil {
@@ -230,12 +237,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
+		<-deltasChan
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
 		return nil
 	}
 
+	computeKRSChan := make(chan struct{}, 1)
 	computeKRS := func() error {
+		defer close(computeKRSChan)
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
@@ -285,6 +295,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 
 		krs = icicleRes
+		<-deltasChan
 		krs.AddMixed(&deltas[2])
 
 		krs.AddAssign(&krs2)
@@ -300,7 +311,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}
 
+	computeBS2Chan := make(chan struct{}, 1)
 	computeBS2 := func() error {
+		defer close(computeBS2Chan)
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
@@ -329,7 +342,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// schedule our proof part computations
 	startMSM := time.Now()
 
-	<-chWireValuesB
+	go computeBS1()
+	go computeAR1()
+	go computeKRS()
+	go computeBS2()
+
+	<-computeKRSChan
+	<-computeBS2Chan
+
+	/*<-chWireValuesB
 	if wireValuesBDeviceErr != nil {
 		return nil, wireValuesBDeviceErr
 	}
@@ -355,7 +376,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	err = computeBS2() // need device B
 	if err != nil {
 		return nil, err
-	}
+	}*/
+
+	//TODO rm
+	fmt.Println(wireValuesADeviceErr)
+	fmt.Println(wireValuesBDeviceErr)
 
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
