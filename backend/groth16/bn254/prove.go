@@ -222,6 +222,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var krs, krs2, p1 curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
+		<-chHDone
 		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
 
@@ -283,9 +284,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		proof.Bs.FromJacobian(&Bs)
 		return nil
 	}
-
-	// wait for FFT to end, as it uses all our CPUs
-	<-chHDone
 
 	// schedule our proof part computations
 	startMSM := time.Now()
