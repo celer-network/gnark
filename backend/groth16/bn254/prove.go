@@ -400,6 +400,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 
 	err := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
+	go func() {
+		goicicle.CudaFree(b_device)
+		goicicle.CudaFree(c_device)
+	}()
+
 	if err != nil {
 		return nil, err
 	}
@@ -411,8 +416,6 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 
 	go func() {
 		goicicle.CudaFree(a_device)
-		goicicle.CudaFree(b_device)
-		goicicle.CudaFree(c_device)
 	}()
 
 	_, err = icicle.ReverseScalars(h, n)
