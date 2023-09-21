@@ -372,6 +372,13 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	/*********** Copy a,b,c to Device End ************/
 
 	var deviceANttErr, deviceBNttErr, deviceCNttErr error
+	defer func() {
+		go func() {
+			goicicle.CudaFree(b_device)
+			goicicle.CudaFree(c_device)
+			goicicle.CudaFree(a_device)
+		}()
+	}()
 	var deviceNttWait sync.WaitGroup
 	deviceNttWait.Add(3)
 	go func() {
@@ -400,11 +407,6 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 
 	err := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
-	go func() {
-		goicicle.CudaFree(b_device)
-		goicicle.CudaFree(c_device)
-	}()
-
 	if err != nil {
 		return nil, err
 	}
@@ -413,10 +415,6 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	go func() {
-		goicicle.CudaFree(a_device)
-	}()
 
 	_, err = icicle.ReverseScalars(h, n)
 	if err != nil {
