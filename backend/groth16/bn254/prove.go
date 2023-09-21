@@ -380,30 +380,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	}()
 	go func() {
 		defer deviceNttWait.Done()
-		var a_intt_d unsafe.Pointer
-		a_intt_d, deviceBNttErr = INttOnDevice(b_device, pk.DomainDevice.TwiddlesInv, nil, n, false)
-		defer goicicle.CudaFree(a_intt_d)
-		if deviceBNttErr != nil {
-			return
-		}
-		deviceBNttErr = NttOnDevice(b_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		if deviceBNttErr != nil {
-			return
-		}
+		deviceBNttErr = DoNttOnDevice(b_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, sizeBytes)
 	}()
 	go func() {
 		defer deviceNttWait.Done()
-		//deviceCNttErr = DoNttOnDevice(c_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTable, n, sizeBytes)
-		var a_intt_d unsafe.Pointer
-		a_intt_d, deviceCNttErr = INttOnDevice(c_device, pk.DomainDevice.TwiddlesInv, nil, n, false)
-		defer goicicle.CudaFree(a_intt_d)
-		if deviceCNttErr != nil {
-			return
-		}
-		deviceCNttErr = NttOnDevice(c_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		if deviceCNttErr != nil {
-			return
-		}
+		deviceCNttErr = DoNttOnDevice(c_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, sizeBytes)
 	}()
 	deviceNttWait.Wait()
 
