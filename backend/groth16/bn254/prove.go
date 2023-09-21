@@ -351,11 +351,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	}()
 	go func() {
 		defer dCpyWait.Done()
-		b_device, b_device_err = CopyToDevice(a, sizeBytes)
+		b_device, b_device_err = CopyToDevice(b, sizeBytes)
 	}()
 	go func() {
 		defer dCpyWait.Done()
-		c_device, c_device_err = CopyToDevice(a, sizeBytes)
+		c_device, c_device_err = CopyToDevice(c, sizeBytes)
 	}()
 	dCpyWait.Wait()
 	if a_device_err != nil {
