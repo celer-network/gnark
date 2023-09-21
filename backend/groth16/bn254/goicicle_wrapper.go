@@ -18,7 +18,7 @@ type OnDeviceData struct {
 	size int
 }
 
-func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, sizeBytes int, isCoset bool) (unsafe.Pointer, error) {
+func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size int, isCoset bool) (unsafe.Pointer, error) {
 	_, err := icicle.ReverseScalars(scalars_d, size)
 	if err != nil {
 		return nil, err
