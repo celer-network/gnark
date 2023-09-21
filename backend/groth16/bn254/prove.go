@@ -376,16 +376,7 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	deviceNttWait.Add(3)
 	go func() {
 		defer deviceNttWait.Done()
-		var a_intt_d unsafe.Pointer
-		a_intt_d, deviceANttErr = INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, nil, n, false)
-		defer goicicle.CudaFree(a_intt_d)
-		if deviceANttErr != nil {
-			return
-		}
-		deviceANttErr = NttOnDevice(a_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		if deviceANttErr != nil {
-			return
-		}
+		deviceANttErr = DoNttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTable, n, sizeBytes)
 	}()
 	go func() {
 		defer deviceNttWait.Done()
