@@ -97,8 +97,12 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
 
 	msmTime := time.Now()
-	icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
+	commitRet := icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
 	timings := time.Since(msmTime)
+
+	if commitRet == -1 {
+		return curve.G1Jac{}, out_d, fmt.Errorf("MsmOnDevice fail with -1"), timings
+	}
 
 	if convert {
 		outHost := make([]icicle.G1ProjectivePoint, 1)
