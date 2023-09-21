@@ -29,6 +29,7 @@ import (
 	goicicle "github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bn254"
 	"math/big"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -106,9 +107,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
+	var h_err error
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		h, h_err = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -267,6 +269,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
+	if h_err != nil {
+		return nil, h_err
+	}
 
 	// schedule our proof part computations
 	startMSM := time.Now()
@@ -312,7 +317,7 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	return r
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -334,52 +339,89 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	/*********** Copy a,b,c to Device Start ************/
 	computeHTime := time.Now()
-	copyADone := make(chan unsafe.Pointer, 1)
-	copyBDone := make(chan unsafe.Pointer, 1)
-	copyCDone := make(chan unsafe.Pointer, 1)
-
 	convTime := time.Now()
-	go CopyToDevice(a, sizeBytes, copyADone)
-	go CopyToDevice(b, sizeBytes, copyBDone)
-	go CopyToDevice(c, sizeBytes, copyCDone)
 
-	a_device := <-copyADone
-	b_device := <-copyBDone
-	c_device := <-copyCDone
+	var dCpyWait sync.WaitGroup
+	var a_device, b_device, c_device unsafe.Pointer
+	var a_device_err, b_device_err, c_device_err error
+	dCpyWait.Add(3)
+	go func() {
+		defer dCpyWait.Done()
+		a_device, a_device_err = CopyToDevice(a, sizeBytes)
+	}()
+	go func() {
+		defer dCpyWait.Done()
+		b_device, b_device_err = CopyToDevice(a, sizeBytes)
+	}()
+	go func() {
+		defer dCpyWait.Done()
+		c_device, c_device_err = CopyToDevice(a, sizeBytes)
+	}()
+	dCpyWait.Wait()
+	if a_device_err != nil {
+		return nil, a_device_err
+	}
+	if b_device_err != nil {
+		return nil, b_device_err
+	}
+	if c_device_err != nil {
+		return nil, c_device_err
+	}
 
 	log.Debug().Dur("took", time.Since(convTime)).Msg("Icicle API: Conv and Copy a,b,c")
 	/*********** Copy a,b,c to Device End ************/
 
-	computeInttNttDone := make(chan error, 1)
-	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
-		a_intt_d, timings_a := INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
-		log.Debug().Dur("took", timings_a[0]).Msg("Icicle API: INTT Reverse")
-		log.Debug().Dur("took", timings_a[1]).Msg("Icicle API: INTT Interp")
+	var deviceANttErr, deviceBNttErr, deviceCNttErr error
+	var deviceNttWait sync.WaitGroup
+	deviceNttWait.Add(3)
+	go func() {
+		defer deviceNttWait.Done()
+		var a_intt_d unsafe.Pointer
+		a_intt_d, deviceANttErr = INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		if deviceANttErr != nil {
+			return
+		}
+		deviceANttErr = NttOnDevice(a_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		if deviceANttErr != nil {
+			return
+		}
+	}()
+	go func() {
+		defer deviceNttWait.Done()
+		var a_intt_d unsafe.Pointer
+		a_intt_d, deviceBNttErr = INttOnDevice(b_device, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		if deviceBNttErr != nil {
+			return
+		}
+		deviceBNttErr = NttOnDevice(b_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		if deviceBNttErr != nil {
+			return
+		}
+	}()
+	go func() {
+		defer deviceNttWait.Done()
+		var a_intt_d unsafe.Pointer
+		a_intt_d, deviceCNttErr = INttOnDevice(c_device, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		if deviceCNttErr != nil {
+			return
+		}
+		deviceCNttErr = NttOnDevice(c_device, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		if deviceCNttErr != nil {
+			return
+		}
+	}()
+	deviceNttWait.Wait()
 
-		timing_a2 := NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		log.Debug().Dur("took", timing_a2[1]).Msg("Icicle API: NTT Coset Reverse")
-		log.Debug().Dur("took", timing_a2[0]).Msg("Icicle API: NTT Coset Eval")
+	err := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
-		computeInttNttDone <- nil
-
-		goicicle.CudaFree(a_intt_d)
+	if err != nil {
+		return nil, err
 	}
 
-	computeInttNttTime := time.Now()
-	go computeInttNttOnDevice(a_device)
-	go computeInttNttOnDevice(b_device)
-	go computeInttNttOnDevice(c_device)
-	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
-	log.Debug().Dur("took", time.Since(computeInttNttTime)).Msg("Icicle API: INTT and NTT")
-
-	poltime := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
-	log.Debug().Dur("took", poltime[0]).Msg("Icicle API: PolyOps Mul a b")
-	log.Debug().Dur("took", poltime[1]).Msg("Icicle API: PolyOps Sub a c")
-	log.Debug().Dur("took", poltime[2]).Msg("Icicle API: PolyOps Mul a den")
-
-	h, timings_final := INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
-	log.Debug().Dur("took", timings_final[0]).Msg("Icicle API: INTT Coset Reverse")
-	log.Debug().Dur("took", timings_final[1]).Msg("Icicle API: INTT Coset Interp")
+	h, err := INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	if err != nil {
+		return nil, err
+	}
 
 	go func() {
 		goicicle.CudaFree(a_device)
@@ -387,8 +429,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		goicicle.CudaFree(c_device)
 	}()
 
-	icicle.ReverseScalars(h, n)
+	_, err = icicle.ReverseScalars(h, n)
+	if err != nil {
+		return nil, err
+	}
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
-	return h
+	return h, nil
 }
