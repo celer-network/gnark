@@ -127,22 +127,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
-		for i, j := 0, 0; j < len(wireValuesB); i++ {
-			if pk.InfinityB[i] {
-				continue
-			}
-			wireValuesB[j] = wireValues[i]
-			j++
-		}
-
-		wireValuesBSize := len(wireValuesB)
-		scalarBytes := wireValuesBSize * fr.Bytes
-		wireValuesBDevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesBDevicePtr, wireValuesB, scalarBytes)
-		MontConvOnDevice(wireValuesBDevicePtr, wireValuesBSize, false)
-		wireValuesBDevice = OnDeviceData{wireValuesBDevicePtr, wireValuesBSize}
-
+		wireValuesBDevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
 		close(chWireValuesB)
 	}()
 
