@@ -115,8 +115,8 @@ func CopyToDevice(scalars []fr.Element, bytes int) (unsafe.Pointer, error) {
 		return nil, cmErr
 	}
 	ret := cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
-	if ret == -1 {
-		return nil, fmt.Errorf("CudaMemCpyHtoD fail with -1")
+	if ret != 0 {
+		return nil, fmt.Errorf("CudaMemCpyHtoD fail with %d", ret)
 	}
 	err := MontConvOnDevice(devicePtr, len(scalars), false)
 	if err != nil {

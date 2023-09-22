@@ -123,22 +123,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
-		for i, j := 0, 0; j < len(wireValuesA); i++ {
-			if pk.InfinityA[i] {
-				continue
-			}
-			wireValuesA[j] = wireValues[i]
-			j++
-		}
-
-		wireValuesASize := len(wireValuesA)
-		scalarBytes := wireValuesASize * fr.Bytes
-		wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
-		MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
-		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
-
+		wireValuesADevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
 		close(chWireValuesA)
 	}()
 	go func() {
@@ -315,6 +300,31 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	}
 
 	return r
+}
+
+func PrepareWireValueOnDevice(wireValues []fr.Element, nbInfinityA uint64, infinityA []bool) (data OnDeviceData, err error) {
+	wireValuesA := make([]fr.Element, len(wireValues)-int(nbInfinityA))
+	for i, j := 0, 0; j < len(wireValuesA); i++ {
+		if infinityA[i] {
+			continue
+		}
+		wireValuesA[j] = wireValues[i]
+		j++
+	}
+
+	data.size = len(wireValuesA)
+	scalarBytes := data.size * fr.Bytes
+	if data.p, err = goicicle.CudaMalloc(scalarBytes); err != nil {
+		return
+	}
+	if ret := goicicle.CudaMemCpyHtoD[fr.Element](data.p, wireValuesA, scalarBytes); ret != 0 {
+		err = fmt.Errorf("CudaMemCpyHtoD in PrepareWireValueOnDevice %d", ret)
+		return
+	}
+	if err = MontConvOnDevice(data.p, data.size, false); err != nil {
+		return
+	}
+	return
 }
 
 func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
