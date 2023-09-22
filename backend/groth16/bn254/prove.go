@@ -127,7 +127,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesBDevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
+		wireValuesBDevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
 		close(chWireValuesB)
 	}()
 
