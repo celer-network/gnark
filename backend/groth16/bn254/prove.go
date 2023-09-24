@@ -28,6 +28,7 @@ import (
 	"github.com/consensys/gnark/logger"
 	goicicle "github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bn254"
+	"github.com/rs/zerolog/log"
 	"math/big"
 	"sync"
 	"time"
@@ -120,14 +121,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesADevice, wireValuesBDevice OnDeviceData
+	var wireValuesADeviceErr, wireValuesBDeviceErr error
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesADevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
+		wireValuesADevice, wireValuesADeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesBDevice, _ = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
+		wireValuesBDevice, wireValuesBDeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
 		close(chWireValuesB)
 	}()
 
@@ -141,20 +143,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 	_kr.Mul(&_r, &_s).Neg(&_kr)
-
 	_r.BigInt(&r)
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	var bs1, ar curve.G1Jac
+	var bs1, ar *curve.G1Jac
 
 	computeBS1 := func() {
 		<-chWireValuesB
 
-		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
+		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
@@ -170,14 +171,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(&ar)
+		proof.Ar.FromJacobian(ar)
 	}
 
 	computeKRS := func() {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 curve.G1Jac
+		var krs, krs2, p1 *curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
 		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
@@ -207,15 +208,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		krs = icicleRes
 		krs.AddMixed(&deltas[2])
 
-		krs.AddAssign(&krs2)
+		krs.AddAssign(krs2)
 
-		p1.ScalarMultiplication(&ar, &s)
-		krs.AddAssign(&p1)
+		p1.ScalarMultiplication(ar, &s)
+		krs.AddAssign(p1)
 
-		p1.ScalarMultiplication(&bs1, &r)
-		krs.AddAssign(&p1)
+		p1.ScalarMultiplication(bs1, &r)
+		krs.AddAssign(p1)
 
-		proof.Krs.FromJacobian(&krs)
+		proof.Krs.FromJacobian(krs)
 	}
 
 	computeBS2 := func() error {
@@ -285,6 +286,97 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	}
 
 	return r
+}
+
+// bs1
+func Bs1MsmOnDevice(wireValuesBDevice, B unsafe.Pointer, beta, deltas1 *curve.G1Affine, size int) (bs1 *curve.G1Jac, err error) {
+	var timing time.Duration
+	if bs1, _, err, timing = MsmOnDevice(wireValuesBDevice, B, size, BUCKET_FACTOR, true); err != nil {
+		return
+	}
+	log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
+	bs1.AddMixed(beta)
+	bs1.AddMixed(deltas1)
+	return bs1, nil
+}
+
+// ar1
+func Ar1MsmOnDevice(wireValuesADevice, A unsafe.Pointer, alpha, deltas0 *curve.G1Affine, size int, proofAr *curve.G1Affine) (ar *curve.G1Jac, err error) {
+	var timing time.Duration
+	if ar, _, err, timing = MsmOnDevice(wireValuesADevice, A, size, BUCKET_FACTOR, true); err != nil {
+		return
+	}
+	log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+	ar.AddMixed(alpha)
+	ar.AddMixed(deltas0)
+	proofAr.FromJacobian(ar)
+	return
+}
+
+// krs
+func KrsMsmOnDevice(h, Z, deviceK unsafe.Pointer, cardinality uint64, wireValues []fr.Element, privateToPublic, k []int,
+	nbPublicVariables int, deltas2, Krs *curve.G1Affine, ar, bs1 *curve.G1Jac, s, r *big.Int) error {
+	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// however, having similar lengths for our tasks helps with parallelism
+
+	var krs, krs2, p1 *curve.G1Jac
+	sizeH := int(cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+
+	icicleRes, _, err, timing := MsmOnDevice(h, Z, sizeH, BUCKET_FACTOR, true)
+	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+	if err != nil {
+		return err
+	}
+
+	krs2 = icicleRes
+	// filter the wire values if needed;
+	_wireValues := filter(wireValues, privateToPublic)
+
+	scals := _wireValues[nbPublicVariables:]
+
+	// Filter scalars matching infinity point indices
+	for _, indexToRemove := range k {
+		scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+	}
+
+	scalarBytes := len(scals) * fr.Bytes
+	scalars_d, err := goicicle.CudaMalloc(scalarBytes)
+	if err != nil {
+		return err
+	}
+	ret := goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+	if ret != 0 {
+		return fmt.Errorf("CudaMemCpyHtoD in krs, ret: %d", ret)
+	}
+	err = MontConvOnDevice(scalars_d, len(scals), false)
+	if err != nil {
+		return err
+	}
+
+	icicleRes, _, err, timing = MsmOnDevice(scalars_d, deviceK, len(scals), BUCKET_FACTOR, true)
+	if err != nil {
+		return err
+	}
+	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+
+	ret = goicicle.CudaFree(scalars_d)
+	if ret != 0 {
+		return fmt.Errorf("krs CudaFree failt, ret: %d", ret)
+	}
+
+	krs = icicleRes
+	krs.AddMixed(deltas2)
+
+	krs.AddAssign(krs2)
+
+	p1.ScalarMultiplication(ar, s)
+	krs.AddAssign(p1)
+
+	p1.ScalarMultiplication(bs1, r)
+	krs.AddAssign(p1)
+
+	Krs.FromJacobian(krs)
+	return nil
 }
 
 func PrepareWireValueOnDevice(wireValues []fr.Element, nbInfinityA uint64, infinityA []bool) (data OnDeviceData, err error) {

@@ -70,7 +70,7 @@ func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) error {
 	return nil
 }
 
-func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G1Jac, unsafe.Pointer, error, time.Duration) {
+func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
 	g1ProjPointBytes := fp.Bytes * 3
 	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
 
@@ -81,12 +81,12 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 	if convert {
 		outHost := make([]icicle.G1ProjectivePoint, 1)
 		cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
-		retPoint := *bn254.G1ProjectivePointToGnarkJac(&outHost[0])
+		retPoint := bn254.G1ProjectivePointToGnarkJac(&outHost[0])
 		cudawrapper.CudaFree(out_d)
 		return retPoint, nil, nil, timings
 	}
 
-	return curve.G1Jac{}, out_d, nil, timings
+	return nil, out_d, nil, timings
 }
 
 func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G2Jac, unsafe.Pointer, error, time.Duration) {
