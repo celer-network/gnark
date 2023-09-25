@@ -210,6 +210,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		krs.AddAssign(krs2)
 
+		p1 = new(curve.G1Jac)
 		p1.ScalarMultiplication(ar, &s)
 		krs.AddAssign(p1)
 
