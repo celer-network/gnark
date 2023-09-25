@@ -272,6 +272,26 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	return proof, nil
 }
 
+func CalDeltas(pkDelta *curve.G1Affine) ([]curve.G1Affine, *big.Int, *big.Int, error) {
+	// sample random r and s
+	r := new(big.Int)
+	s := new(big.Int)
+	var _r, _s, _kr fr.Element
+	if _, err := _r.SetRandom(); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err := _s.SetRandom(); err != nil {
+		return nil, nil, nil, err
+	}
+	_kr.Mul(&_r, &_s).Neg(&_kr)
+	_r.BigInt(r)
+	_s.BigInt(s)
+
+	// computes r[δ], s[δ], kr[δ]
+	deltas := curve.BatchScalarMultiplicationG1(pkDelta, []fr.Element{_r, _s, _kr})
+	return deltas, r, s, nil
+}
+
 // if len(toRemove) == 0, returns slice
 // else, returns a new slice without the indexes in toRemove
 // this assumes toRemove indexes are sorted and len(slice) > len(toRemove)
