@@ -170,14 +170,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	computeAR1 := func() {
 		<-chWireValuesA
+		var arErr error
+		ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
+		if arErr != nil {
+			fmt.Println(arErr)
+		}
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
+		/*icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
 
 		ar = icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(ar)
+		proof.Ar.FromJacobian(ar)*/
 	}
 
 	computeKRS := func() {
