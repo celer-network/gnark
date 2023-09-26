@@ -159,13 +159,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		if bs1Err != nil {
 			fmt.Println(bs1Err)
 		}
-
-		/*icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
-
-		bs1 = icicleRes
-		bs1.AddMixed(&pk.G1.Beta)
-		bs1.AddMixed(&deltas[1])*/
 	}
 
 	computeAR1 := func() {
@@ -175,21 +168,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		if arErr != nil {
 			fmt.Println(arErr)
 		}
-
-		/*icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-
-		ar = icicleRes
-		ar.AddMixed(&pk.G1.Alpha)
-		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(ar)*/
 	}
 
 	computeKRS := func() {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 *curve.G1Jac
+		krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
+			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, &s, &r)
+		if krsErr != nil {
+			fmt.Println(krsErr)
+		}
+		/*var krs, krs2, p1 *curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
 		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
@@ -228,7 +218,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		p1.ScalarMultiplication(bs1, &r)
 		krs.AddAssign(p1)
 
-		proof.Krs.FromJacobian(krs)
+		proof.Krs.FromJacobian(krs)*/
 	}
 
 	computeBS2 := func() error {
