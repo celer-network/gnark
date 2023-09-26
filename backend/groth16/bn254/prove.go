@@ -397,6 +397,7 @@ func KrsMsmOnDevice(h, Z, deviceK unsafe.Pointer, cardinality uint64, wireValues
 
 	krs.AddAssign(krs2)
 
+	p1 = new(curve.G1Jac)
 	p1.ScalarMultiplication(ar, s)
 	krs.AddAssign(p1)
 
