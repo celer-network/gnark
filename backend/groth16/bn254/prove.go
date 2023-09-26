@@ -154,12 +154,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeBS1 := func() {
 		<-chWireValuesB
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		var bs1Err error
+		bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
+		if bs1Err != nil {
+			fmt.Println(bs1Err)
+		}
+
+		/*icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
 
 		bs1 = icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
-		bs1.AddMixed(&deltas[1])
+		bs1.AddMixed(&deltas[1])*/
 	}
 
 	computeAR1 := func() {
