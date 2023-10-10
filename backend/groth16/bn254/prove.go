@@ -291,7 +291,7 @@ func Bs2MsmOnDevice(wireValuesBDevice, B unsafe.Pointer, size int, g2Delta, g2Be
 	deltaS := new(curve.G2Jac)
 	var timing time.Duration
 	if bs, _, err, timing = MsmG2OnDevice(wireValuesBDevice, B, size, BUCKET_FACTOR, true); err != nil {
-		return
+		return err
 	}
 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 
