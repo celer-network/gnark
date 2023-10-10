@@ -134,7 +134,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}()
 
 	// sample random r and s
-	var r, s big.Int
+	/*var r, s big.Int
 	var _r, _s, _kr fr.Element
 	if _, err := _r.SetRandom(); err != nil {
 		return nil, err
@@ -147,10 +147,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})*/
+	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
+	if err != nil {
+		return nil, err
+	}
 
 	var bs1, ar *curve.G1Jac
-
 	computeBS1 := func() {
 		<-chWireValuesB
 
@@ -174,7 +177,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 		krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
-			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, &s, &r)
+			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, s, r)
 		if krsErr != nil {
 			fmt.Println(krsErr)
 		}
@@ -182,7 +185,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	computeBS2 := func() error {
 		<-chWireValuesB
-		return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, &s, &proof.Bs)
+		return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, s, &proof.Bs)
 	}
 
 	// wait for FFT to end, as it uses all our CPUs
