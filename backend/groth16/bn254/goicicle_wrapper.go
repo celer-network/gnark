@@ -89,7 +89,7 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 	return nil, out_d, nil, timings
 }
 
-func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G2Jac, unsafe.Pointer, error, time.Duration) {
+func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
 	g2ProjPointBytes := fp.Bytes * 6
 	out_d, _ := cudawrapper.CudaMalloc(g2ProjPointBytes)
 
@@ -100,12 +100,12 @@ func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, 
 	if convert {
 		outHost := make([]icicle.G2Point, 1)
 		cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes)
-		retPoint := *bn254.G2PointToGnarkJac(&outHost[0])
+		retPoint := bn254.G2PointToGnarkJac(&outHost[0])
 		cudawrapper.CudaFree(out_d)
 		return retPoint, nil, nil, timings
 	}
 
-	return curve.G2Jac{}, out_d, nil, timings
+	return nil, out_d, nil, timings
 }
 
 // TODO, if has error, should free cudaMem?
