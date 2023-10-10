@@ -26,7 +26,7 @@ import (
 	"github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/logger"
-	goicicle "github.com/ingonyama-zk/icicle/goicicle"
+	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bn254"
 	"github.com/rs/zerolog/log"
 	"math/big"
@@ -133,54 +133,42 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesB)
 	}()
 
-	// sample random r and s
-	/*var r, s big.Int
-	var _r, _s, _kr fr.Element
-	if _, err := _r.SetRandom(); err != nil {
-		return nil, err
-	}
-	if _, err := _s.SetRandom(); err != nil {
-		return nil, err
-	}
-	_kr.Mul(&_r, &_s).Neg(&_kr)
-	_r.BigInt(&r)
-	_s.BigInt(&s)
-
-	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})*/
 	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
 	if err != nil {
 		return nil, err
 	}
 
 	var bs1, ar *curve.G1Jac
-	computeBS1 := func() {
+	computeBS1 := func() error {
 		<-chWireValuesB
 
 		var bs1Err error
 		bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
 		if bs1Err != nil {
-			fmt.Println(bs1Err)
+			return bs1Err
 		}
+		return nil
 	}
 
-	computeAR1 := func() {
+	computeAR1 := func() error {
 		<-chWireValuesA
 		var arErr error
 		ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
 		if arErr != nil {
-			fmt.Println(arErr)
+			return arErr
 		}
+		return nil
 	}
 
-	computeKRS := func() {
+	computeKRS := func() error {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 		krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
 			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, s, r)
 		if krsErr != nil {
-			fmt.Println(krsErr)
+			return krsErr
 		}
+		return nil
 	}
 
 	computeBS2 := func() error {
@@ -202,9 +190,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// schedule our proof part computations
 	startMSM := time.Now()
-	computeBS1()
-	computeAR1()
-	computeKRS()
+	if err = computeBS1(); err != nil {
+		return nil, err
+	}
+	if err = computeAR1(); err != nil {
+		return nil, err
+	}
+	if err = computeKRS(); err != nil {
+		return nil, err
+	}
 	if err = computeBS2(); err != nil {
 		return nil, err
 	}
