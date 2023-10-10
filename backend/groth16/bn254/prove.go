@@ -173,7 +173,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeKRS := func() {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
-
 		krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
 			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, &s, &r)
 		if krsErr != nil {
@@ -182,28 +181,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeBS2 := func() error {
-
-		_, bs2Err := Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, &s, &proof.Bs)
-		if bs2Err != nil {
-			return bs2Err
-		}
-		return nil
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		/*var Bs, deltaS curve.G2Jac
-
 		<-chWireValuesB
-
-		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
-
-		Bs = icicleG2Res
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
-
-		proof.Bs.FromJacobian(&Bs)
-		return nil*/
+		return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, &s, &proof.Bs)
 	}
 
 	// wait for FFT to end, as it uses all our CPUs
@@ -223,13 +202,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeBS1()
 	computeAR1()
 	computeKRS()
-	if err := computeBS2(); err != nil {
+	if err = computeBS2(); err != nil {
 		return nil, err
 	}
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
-
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
-
 	go func() {
 		goicicle.CudaFree(wireValuesADevice.p)
 		goicicle.CudaFree(wireValuesBDevice.p)
@@ -308,7 +285,9 @@ func Ar1MsmOnDevice(wireValuesADevice, A unsafe.Pointer, alpha, deltas0 *curve.G
 }
 
 // bs2
-func Bs2MsmOnDevice(wireValuesBDevice, B unsafe.Pointer, size int, g2Delta, g2Beta *curve.G2Affine, s *big.Int, proofBs *curve.G2Affine) (bs *curve.G2Jac, err error) {
+func Bs2MsmOnDevice(wireValuesBDevice, B unsafe.Pointer, size int, g2Delta, g2Beta *curve.G2Affine, s *big.Int, proofBs *curve.G2Affine) error {
+	var bs *curve.G2Jac
+	var err error
 	deltaS := new(curve.G2Jac)
 	var timing time.Duration
 	if bs, _, err, timing = MsmG2OnDevice(wireValuesBDevice, B, size, BUCKET_FACTOR, true); err != nil {
@@ -323,7 +302,7 @@ func Bs2MsmOnDevice(wireValuesBDevice, B unsafe.Pointer, size int, g2Delta, g2Be
 	bs.AddMixed(g2Beta)
 
 	proofBs.FromJacobian(bs)
-	return bs, nil
+	return nil
 }
 
 // krs
