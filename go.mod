@@ -12,6 +12,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230309165930-d61513b1440d
+	github.com/ingonyama-zk/icicle v0.0.0-20230928131117-97f0079e5c71
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.29.0
 	github.com/stretchr/testify v1.8.3
