@@ -1,6 +1,6 @@
 package groth16
 
-import (
+/*import (
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
 	"unsafe"
 )
@@ -18,4 +18,4 @@ func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size int,
 	// TODO Interpolate do not return error
 	scalarsInterp := icicle.Interpolate(scalars_d, twiddles_d, cosetPowers_d, size, isCoset)
 	return scalarsInterp, nil
-}
+}*/

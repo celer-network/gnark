@@ -17,7 +17,7 @@ import (
 
 func main() {
 	// generate CompiledConstraintSystem
-	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
+	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
 	if err != nil {
 		log.Fatal("frontend.Compile")
 	}
@@ -46,7 +46,7 @@ func main() {
 		RlpString: witnessInput,
 	}
 
-	witness, _ := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
+	witness, _ := frontend.NewWitness(&assignment, ecc.BW6_761.ScalarField())
 	publicWitness, _ := witness.Public()
 
 	// groth16: Prove & Verify
