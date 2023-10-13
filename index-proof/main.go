@@ -26,7 +26,7 @@ func main() {
 	var pk = groth16.NewProvingKey(ecc.BW6_761)
 	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
 
-	fmt.Println("pk load done start.")
+	log.Println("pk load done start.")
 	err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
 	err2 := ReadVerifyingKey("test_index_proof_circuit.vk", vk)
 	if err1 != nil || err2 != nil {
@@ -44,7 +44,7 @@ func main() {
 			log.Fatalln(err)
 		}
 	}
-	fmt.Println("pk load done.")
+	log.Println("pk load done.")
 
 	var indexBuf []byte
 
