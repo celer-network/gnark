@@ -311,10 +311,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 		<-chWireValuesB
 		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+			log.Err(err)
 			return err
 		}
 
-		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
+		icicleG2Res, _, err, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
+		if err != nil {
+			log.Err(err)
+		}
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
