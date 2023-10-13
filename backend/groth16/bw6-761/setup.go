@@ -379,7 +379,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 
 	den_d, _ := goicicle.CudaMalloc(sizeBytes)
 	log2Size := int(math.Floor(math.Log2(float64(n))))
-	denIcicle := NewFieldFromFrGnark[icicle.G1ScalarField](denI)
+	denIcicle := NewFieldFromFrGnark(denI)
 	denIcicleArr := []icicle.G1ScalarField{*denIcicle}
 	for i := 0; i < log2Size; i++ {
 		denIcicleArr = append(denIcicleArr, denIcicleArr...)
@@ -796,8 +796,8 @@ func FromG1AffineGnark(gnark *curve.G1Affine, p *icicle.G1ProjectivePoint) *icic
 	var z icicle.G1BaseField
 	z.SetOne()
 
-	p.X = *NewFieldFromFpGnark[icicle.G1BaseField](gnark.X)
-	p.Y = *NewFieldFromFpGnark[icicle.G1BaseField](gnark.Y)
+	p.X = *NewFieldFromFpGnark(gnark.X)
+	p.Y = *NewFieldFromFpGnark(gnark.Y)
 	p.Z = z
 
 	return p
