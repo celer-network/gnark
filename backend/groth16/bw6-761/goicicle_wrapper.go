@@ -30,7 +30,8 @@ type OnDeviceData struct {
 func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, sizeBytes int, isCoset bool) (unsafe.Pointer, []time.Duration) {
 	var timings []time.Duration
 	revTime := time.Now()
-	icicle.ReverseScalars(scalars_d, size)
+	_, err := icicle.ReverseScalars(scalars_d, size)
+	fmt.Println("INttOnDevice err: %d", err)
 	revTimeElapsed := time.Since(revTime)
 	timings = append(timings, revTimeElapsed)
 
