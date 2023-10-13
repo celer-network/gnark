@@ -24,8 +24,6 @@ github.com/google/pprof v0.0.0-20230309165930-d61513b1440d/go.mod h1:79YE0hCXdHa
 github.com/google/subcommands v1.2.0/go.mod h1:ZjhPrFU+Olkh9WazFPsl27BQ4UPiG37m3yTrtFlrHVk=
 github.com/holiman/uint256 v1.2.3 h1:K8UWO1HUJpRMXBxbmaY1Y8IAMZC/RsKB+ArEnnK4l5o=
 github.com/holiman/uint256 v1.2.3/go.mod h1:SC8Ryt4n+UBbPbIBKaG9zbbDlp4jOru9xFZmPzLUTxw=
-github.com/ingonyama-zk/iciclegnark v0.0.0-20230901124553-e5b9a843dede h1:3BkOWtaAhqzn7NlS9agCYTJ9l1gXkIa6aC4aFdfAnQc=
-github.com/ingonyama-zk/iciclegnark v0.0.0-20230901124553-e5b9a843dede/go.mod h1:2oOaaVYILmoG2tLETR0xrHqYhkko0QjuEFt95sJu42g=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
