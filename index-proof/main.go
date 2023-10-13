@@ -23,10 +23,28 @@ func main() {
 	}
 
 	// groth16 zkSNARK: Setup
-	pk, vk, err := groth16.Setup(ccs)
-	if err != nil {
-		log.Fatal("groth16.Setup")
+	var pk = groth16.NewProvingKey(ecc.BW6_761)
+	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
+
+	fmt.Println("pk load done start.")
+	err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
+	err2 := ReadVerifyingKey("test_index_proof_circuit.vk", vk)
+	if err1 != nil || err2 != nil {
+		log.Printf("Failed to read pk and vk, and try create, err:%v %v \n", err1, err2)
+		pk, vk, err = groth16.Setup(ccs)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		err1 = WriteProvingKey(pk, "test_index_proof_circuit.pk")
+		if err != nil {
+			log.Fatalln(err1)
+		}
+		err2 = WriteVerifyingKey(vk, "test_index_proof_circuit.vk")
+		if err2 != nil {
+			log.Fatalln(err)
+		}
 	}
+	fmt.Println("pk load done.")
 
 	var indexBuf []byte
 
@@ -59,13 +77,50 @@ func main() {
 	if err != nil {
 		log.Fatal("groth16 verify failed...")
 	}
+}
 
-	f, err := os.Create("BlkVerifier.sol")
+func WriteProvingKey(pk groth16.ProvingKey, filename string) error {
+	f, err := os.Create(filename)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	_, err = pk.WriteTo(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func ReadProvingKey(filename string, pk groth16.ProvingKey) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
-	err = vk.ExportSolidity(f)
+	_, err = pk.UnsafeReadFrom(f)
+	return err
+}
+
+func WriteVerifyingKey(vk groth16.VerifyingKey, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	_, err = vk.WriteTo(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadVerifyingKey(filename string, vk groth16.VerifyingKey) error {
+	f, _ := os.Open(filename)
+	defer f.Close()
+	_, err := vk.ReadFrom(f)
+	if err != nil {
+		return err
+	}
+	return nil
 }
