@@ -261,7 +261,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			chKrsDone <- err
 			return
 		}
-		
+
 		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
 		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
@@ -311,6 +311,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
 			return err
 		}
+
+		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
