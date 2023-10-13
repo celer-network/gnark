@@ -2,13 +2,14 @@ package groth16
 
 import (
 	"fmt"
+	"time"
+	"unsafe"
+
 	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fp"
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
 	cudawrapper "github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
-	"time"
-	"unsafe"
 )
 
 type OnDeviceData struct {
