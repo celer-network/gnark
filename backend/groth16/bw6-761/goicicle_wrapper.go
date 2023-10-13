@@ -211,9 +211,18 @@ func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, 
 // }
 
 func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
-	devicePtr, _ := cudawrapper.CudaMalloc(bytes)
-	cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
-	MontConvOnDevice(devicePtr, len(scalars), false)
+	devicePtr, err := cudawrapper.CudaMalloc(bytes)
+	if err != nil {
+		fmt.Printf("err :%v \n", err)
+	}
+	ret := cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
+	if ret != 0 {
+		fmt.Printf("err ret :%d \n", ret)
+	}
+	err = MontConvOnDevice(devicePtr, len(scalars), false)
+	if err != nil {
+		fmt.Printf("err :%v \n", err)
+	}
 
 	copyDone <- devicePtr
 }

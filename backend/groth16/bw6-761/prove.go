@@ -122,7 +122,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB []fr.Element
-	var wireValuesADevice, wireValuesBDevice OnDeviceData 
+	var wireValuesADevice, wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
@@ -242,7 +242,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
-
 
 		scals := make([]fr.Element, len(_wireValues[r1cs.GetNbPublicVariables():]))
 		copy(scals, _wireValues[r1cs.GetNbPublicVariables():])
@@ -489,7 +488,10 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		goicicle.CudaFree(c_device)
 	}()
 
-	icicle.ReverseScalars(h, n)
+	_, err := icicle.ReverseScalars(h, n)
+	if err != nil {
+		fmt.Println(err)
+	}
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
 	return h
