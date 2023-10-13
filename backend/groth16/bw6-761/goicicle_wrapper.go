@@ -60,12 +60,12 @@ func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) (err err
 // 		return fmt.Errorf("evaluate err %d", res)
 // 	}
 
-// 	_, err := icicle.ReverseScalars(scalars_out, size)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+//		_, err := icicle.ReverseScalars(scalars_out, size)
+//		if err != nil {
+//			return err
+//		}
+//		return nil
+//	}
 func NttOnDevice(scalars_out, scalars_d, twiddles_d, coset_powers_d unsafe.Pointer, size, twid_size, size_bytes int, isCoset bool) []time.Duration {
 	var timings []time.Duration
 	evalTime := time.Now()
@@ -102,8 +102,8 @@ func NttOnDevice(scalars_out, scalars_d, twiddles_d, coset_powers_d unsafe.Point
 // 		return fmt.Errorf("VecScalarMulMod fail, ret: %d", ret)
 // 	}
 
-// 	return nil
-// }
+//		return nil
+//	}
 func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Duration) {
 	convSTime := time.Now()
 	ret := icicle.VecScalarMulMod(a_d, b_d, size)
@@ -163,7 +163,8 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 }
 
 func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
-	g2ProjPointBytes := fp.Bytes * 6
+	// bw6761, G2 = G1, with X, Y, Z, fp
+	g2ProjPointBytes := fp.Bytes * 3
 	out_d, err := cudawrapper.CudaMalloc(g2ProjPointBytes)
 	if err != nil {
 		return nil, nil, err, time.Second

@@ -440,7 +440,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************  End G1 Device Setup  ***************************/
 
 	/*************************  Start G2 Device Setup  ***************************/
-	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	// bw6761, G2 = G1, with X, Y, fp
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 2
 	b2_d, _ := goicicle.CudaMalloc(pointsBytesB2)
 	iciclePointsB2 := BatchConvertFromG2Affine(pk.G2.B)
 	goicicle.CudaMemCpyHtoD[icicle.G2PointAffine](b2_d, iciclePointsB2, pointsBytesB2)
