@@ -17,12 +17,12 @@
 package groth16
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
 	"math/bits"
 	"unsafe"
-	"encoding/binary"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
@@ -334,7 +334,6 @@ func Setup(r1cs *cs.R1CS, pk *ProvingKey, vk *VerifyingKey) error {
 
 	return nil
 }
-
 
 func (pk *ProvingKey) setupDevicePointers() {
 	n := int(pk.Domain.Cardinality)
@@ -804,20 +803,33 @@ func FromG1AffineGnark(gnark *curve.G1Affine, p *icicle.G1ProjectivePoint) *icic
 	return p
 }
 
-func NewFieldFromFpGnark[T icicle.G1BaseField | icicle.G1ScalarField](element fp.Element) *T {
-	s := ConvertUint64ArrToUint32Arr(element.Bits()) // get non-montgomry
+func NewFieldFromFrGnark(element fr.Element) *icicle.G1ScalarField {
+	S := ConvertUint64ArrToUint32Arr12(element.Bits()) // get non-montgomry
 
-	return &T{s}
+	return &icicle.G1ScalarField{S}
 }
 
-func NewFieldFromFrGnark[T icicle.G1BaseField | icicle.G1ScalarField](element fr.Element) *T {
-	s := ConvertUint64ArrToUint32Arr(element.Bits()) // get non-montgomry
+func NewFieldFromFpGnark(element fp.Element) *icicle.G1BaseField {
+	S := ConvertUint64ArrToUint32Arr24(element.Bits()) // get non-montgomry
 
-	return &T{s}
+	return &icicle.G1BaseField{S}
 }
 
-func ConvertUint64ArrToUint32Arr(arr64 [4]uint64) [8]uint32 {
-	var arr32 [8]uint32
+func ConvertUint64ArrToUint32Arr12(arr64 [6]uint64) [12]uint32 {
+	var arr32 [12]uint32
+	for i, v := range arr64 {
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, v)
+
+		arr32[i*2] = binary.LittleEndian.Uint32(b[0:4])
+		arr32[i*2+1] = binary.LittleEndian.Uint32(b[4:8])
+	}
+
+	return arr32
+}
+
+func ConvertUint64ArrToUint32Arr24(arr64 [12]uint64) [24]uint32 {
+	var arr32 [24]uint32
 	for i, v := range arr64 {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, v)
@@ -841,11 +853,7 @@ func BatchConvertFromG2Affine(elements []curve.G2Affine) []icicle.G2PointAffine 
 }
 
 func G2AffineFromGnarkAffine(gnark *curve.G2Affine, g *icicle.G2PointAffine) *icicle.G2PointAffine {
-	g.X.A0 = gnark.X.A0.Bits()
-	g.X.A1 = gnark.X.A1.Bits()
-	g.Y.A0 = gnark.Y.A0.Bits()
-	g.Y.A1 = gnark.Y.A1.Bits()
-
+	g.X = gnark.X.Bits()
+	g.Y = gnark.Y.Bits()
 	return g
 }
-
