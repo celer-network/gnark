@@ -32,7 +32,6 @@ func main() {
 
 	indexBuf = rlp.AppendUint64(indexBuf, uint64(1))
 	input := utils.GetHexArray(fmt.Sprintf("%x", indexBuf), 6)
-	fmt.Printf("input:  %d", input)
 	if len(input) != 6 {
 		log.Fatalf("invalid input, index: %d", 1)
 	}
