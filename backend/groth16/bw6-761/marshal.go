@@ -17,9 +17,8 @@
 package groth16
 
 import (
-	"encoding/json"
-	"io"
 	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
+	"io"
 )
 
 // WriteTo writes binary encoding of the Proof elements to writer
@@ -51,9 +50,6 @@ func (proof *Proof) writeTo(w io.Writer, raw bool) (int64, error) {
 		return enc.BytesWritten(), err
 	}
 	if err := enc.Encode(&proof.Krs); err != nil {
-		return enc.BytesWritten(), err
-	}
-	if err := enc.Encode(&proof.Commitment); err != nil {
 		return enc.BytesWritten(), err
 	}
 	return enc.BytesWritten(), nil
@@ -129,22 +125,6 @@ func (vk *VerifyingKey) writeTo(w io.Writer, raw bool) (int64, error) {
 		return enc.BytesWritten(), err
 	}
 
-	if err := enc.Encode(&vk.CommitmentKey.G); err != nil {
-		return enc.BytesWritten(), err
-	}
-	if err := enc.Encode(&vk.CommitmentKey.GRootSigmaNeg); err != nil {
-		return enc.BytesWritten(), err
-	}
-
-	b, err := json.Marshal(vk.CommitmentInfo)
-	if err != nil {
-		return enc.BytesWritten(), err
-	}
-	_, err = w.Write(b)
-	if err != nil {
-		return enc.BytesWritten(), err
-	}
-
 	return enc.BytesWritten(), nil
 }
 
@@ -188,22 +168,6 @@ func (vk *VerifyingKey) readFrom(r io.Reader, decOptions ...func(*curve.Decoder)
 
 	// uint32(len(Kvk)),[Kvk]1
 	if err := dec.Decode(&vk.G1.K); err != nil {
-		return dec.BytesRead(), err
-	}
-
-	if err := dec.Decode(&vk.CommitmentKey.G); err != nil {
-		return dec.BytesRead(), err
-	}
-	if err := dec.Decode(&vk.CommitmentKey.GRootSigmaNeg); err != nil {
-		return dec.BytesRead(), err
-	}
-
-	b, err := io.ReadAll(r)
-	if err != nil {
-		return dec.BytesRead(), err
-	}
-	err = json.Unmarshal(b, &vk.CommitmentInfo)
-	if err != nil {
 		return dec.BytesRead(), err
 	}
 
@@ -259,8 +223,6 @@ func (pk *ProvingKey) writeTo(w io.Writer, raw bool) (int64, error) {
 		pk.NbInfinityB,
 		pk.InfinityA,
 		pk.InfinityB,
-		pk.CommitmentKey.Basis,
-		pk.CommitmentKey.BasisExpSigma,
 	}
 
 	for _, v := range toEncode {
@@ -325,13 +287,6 @@ func (pk *ProvingKey) readFrom(r io.Reader, decOptions ...func(*curve.Decoder)) 
 	}
 	if err := dec.Decode(&pk.InfinityB); err != nil {
 		return n + dec.BytesRead(), err
-	}
-
-	if err := dec.Decode(&pk.CommitmentKey.Basis); err != nil {
-		return dec.BytesRead(), err
-	}
-	if err := dec.Decode(&pk.CommitmentKey.BasisExpSigma); err != nil {
-		return dec.BytesRead(), err
 	}
 
 	size := n + dec.BytesRead()

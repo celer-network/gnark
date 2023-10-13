@@ -804,18 +804,18 @@ func FromG1AffineGnark(gnark *curve.G1Affine, p *icicle.G1ProjectivePoint) *icic
 }
 
 func NewFieldFromFrGnark(element fr.Element) *icicle.G1ScalarField {
-	S := ConvertUint64ArrToUint32Arr12(element.Bits()) // get non-montgomry
+	S := ConvertUint64ArrToUint32Arr6(element.Bits()) // get non-montgomry
 
 	return &icicle.G1ScalarField{S}
 }
 
 func NewFieldFromFpGnark(element fp.Element) *icicle.G1BaseField {
-	S := ConvertUint64ArrToUint32Arr24(element.Bits()) // get non-montgomry
+	S := ConvertUint64ArrToUint32Arr12(element.Bits()) // get non-montgomry
 
 	return &icicle.G1BaseField{S}
 }
 
-func ConvertUint64ArrToUint32Arr12(arr64 [6]uint64) [12]uint32 {
+func ConvertUint64ArrToUint32Arr6(arr64 [6]uint64) [12]uint32 {
 	var arr32 [12]uint32
 	for i, v := range arr64 {
 		b := make([]byte, 8)
@@ -828,7 +828,7 @@ func ConvertUint64ArrToUint32Arr12(arr64 [6]uint64) [12]uint32 {
 	return arr32
 }
 
-func ConvertUint64ArrToUint32Arr24(arr64 [12]uint64) [24]uint32 {
+func ConvertUint64ArrToUint32Arr12(arr64 [12]uint64) [24]uint32 {
 	var arr32 [24]uint32
 	for i, v := range arr64 {
 		b := make([]byte, 8)
