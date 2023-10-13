@@ -26,12 +26,12 @@ func main() {
 	var pk = groth16.NewProvingKey(ecc.BW6_761)
 	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
 
-	/*log.Println("pk load done start.")
+	log.Println("pk load done start.")
 	pk, vk, err = groth16.Setup(ccs)
 	if err != nil {
 		log.Fatalln(err)
-	}*/
-	err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
+	}
+	/*err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
 	err2 := ReadVerifyingKey("test_index_proof_circuit.vk", vk)
 	if err1 != nil || err2 != nil {
 		log.Printf("Failed to read pk and vk, and try create, err:%v %v \n", err1, err2)
@@ -47,7 +47,7 @@ func main() {
 		if err2 != nil {
 			log.Fatalln(err)
 		}
-	}
+	}*/
 	log.Println("pk load done.")
 
 	var indexBuf []byte
