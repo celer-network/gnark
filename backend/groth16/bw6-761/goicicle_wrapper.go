@@ -31,12 +31,15 @@ func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, siz
 	var timings []time.Duration
 	revTime := time.Now()
 	_, err := icicle.ReverseScalars(scalars_d, size)
-	fmt.Println("INttOnDevice err: %d", err)
+	if err != nil {
+		fmt.Println("INttOnDevice err: %d", err)
+	}
 	revTimeElapsed := time.Since(revTime)
 	timings = append(timings, revTimeElapsed)
 
 	interpTime := time.Now()
 	scalarsInterp := icicle.Interpolate(scalars_d, twiddles_d, cosetPowers_d, size, isCoset)
+
 	interpTimeElapsed := time.Since(interpTime)
 	timings = append(timings, interpTimeElapsed)
 	return scalarsInterp, timings
