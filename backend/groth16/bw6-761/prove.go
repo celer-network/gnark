@@ -122,7 +122,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB []fr.Element
-	var wireValuesADevice, wireValuesBDevice OnDeviceData
+	// var wireValuesADevice OnDeviceData 
+	var wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
@@ -135,12 +136,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			j++
 		}
 
-		wireValuesASize := len(wireValuesA)
-		scalarBytes := wireValuesASize * fr.Bytes
-		wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
-		MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
-		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
+		// wireValuesASize := len(wireValuesA)
+		// scalarBytes := wireValuesASize * fr.Bytes
+		// wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+		// goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
+		// MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
+		// wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
 
 		close(chWireValuesA)
 	}()
@@ -212,10 +213,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
-		
+		// icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		// log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+		// fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
+
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
