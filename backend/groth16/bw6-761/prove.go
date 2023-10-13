@@ -212,7 +212,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		icicleRes, _, merr, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
+		if merr != nil {
+			log.Err(merr)
+		}
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
 		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
 
