@@ -17,6 +17,8 @@
 package groth16
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
@@ -29,6 +31,7 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bn254"
 	"github.com/rs/zerolog/log"
+	"io"
 	"math/big"
 	"sync"
 	"time"
@@ -58,12 +61,18 @@ const BUCKET_FACTOR int = 10
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
-	opt, err := backend.NewProverConfig(opts...)
+	proof, solution, err := SolveOnly(r1cs, pk, fullWitness, opts...)
 	if err != nil {
 		return nil, err
 	}
+	return ProveOnly(r1cs, pk, proof, solution)
+}
 
-	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+func SolveOnly(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, *cs.R1CSSolution, error) {
+	opt, err := backend.NewProverConfig(opts...)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	proof := &Proof{}
 
@@ -98,10 +107,66 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
 	if err != nil {
+		return nil, nil, err
+	}
+	return proof, _solution.(*cs.R1CSSolution), nil
+}
+
+func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, []byte, error) {
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+
+	proof, solution, err := SolveOnly(r1cs, pk, fullWitness, opts...)
+	var buf bytes.Buffer
+	size, err := solution.WriteTo(&buf)
+	if err != nil {
+		return nil, nil, err
+	}
+	var bufCompressed bytes.Buffer
+	writer := gzip.NewWriter(&bufCompressed)
+	_, err = writer.Write(buf.Bytes())
+	if err != nil {
+		return nil, nil, err
+	}
+	err = writer.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	compressedBytes := bufCompressed.Bytes()
+
+	log.Debug().Int64("uncompressed bytes", size)
+	log.Debug().Int("compressed bytes", len(compressedBytes))
+
+	return proof, compressedBytes, nil
+}
+
+func UncompressSolutionAndProve(r1cs *cs.R1CS, pk *ProvingKey, proof *Proof, compressedSolution []byte) (*Proof, error) {
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+
+	reader, err := gzip.NewReader(bytes.NewBuffer(compressedSolution))
+	if err != nil {
+		return nil, err
+	}
+	solutionBytes, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	err = reader.Close()
+	if err != nil {
+		return nil, err
+	}
+	log.Debug().Int("decompressed solution size", len(solutionBytes))
+
+	var solution *cs.R1CSSolution
+	_, err = solution.ReadFrom(bytes.NewReader(solutionBytes))
+	if err != nil {
 		return nil, err
 	}
 
-	solution := _solution.(*cs.R1CSSolution)
+	return ProveOnly(r1cs, pk, proof, solution)
+}
+
+func ProveOnly(r1cs *cs.R1CS, pk *ProvingKey, proof *Proof, solution *cs.R1CSSolution) (*Proof, error) {
 	wireValues := []fr.Element(solution.W)
 
 	start := time.Now()
