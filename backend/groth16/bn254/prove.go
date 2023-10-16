@@ -142,7 +142,6 @@ func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness
 	if err != nil {
 		return nil, nil, err
 	}
-	writer.SetConcurrency()
 
 	_, err = writer.Write(buf.Bytes())
 	if err != nil {
