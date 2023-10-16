@@ -18,7 +18,9 @@ package groth16
 
 import (
 	"bytes"
-	"compress/gzip"
+	"github.com/klauspost/compress/gzip"
+
+	//"compress/gzip"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
