@@ -168,7 +168,7 @@ func UncompressSolutionAndProve(r1cs *cs.R1CS, pk *ProvingKey, proof *Proof, com
 	}
 	log.Debug().Int("decompressed solution size", len(solutionBytes))
 
-	var solution *cs.R1CSSolution
+	solution := new(cs.R1CSSolution)
 	_, err = solution.ReadFrom(bytes.NewReader(solutionBytes))
 	if err != nil {
 		return nil, err
