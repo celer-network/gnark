@@ -124,7 +124,7 @@ func SolveOnly(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts 
 }
 
 func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, []byte, error) {
-	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	//log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 
 	proof, solution, err := SolveOnly(r1cs, pk, fullWitness, opts...)
 	var buf bytes.Buffer
@@ -152,7 +152,7 @@ func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness
 }
 
 func UncompressSolutionAndProve(r1cs *cs.R1CS, pk *ProvingKey, proof *Proof, compressedSolution []byte) (*Proof, error) {
-	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	//log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 
 	reader, err := gzip.NewReader(bytes.NewBuffer(compressedSolution))
 	if err != nil {
