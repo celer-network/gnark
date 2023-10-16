@@ -18,9 +18,8 @@ package groth16
 
 import (
 	"bytes"
-	"github.com/klauspost/compress/gzip"
+	gzip "github.com/klauspost/pgzip"
 
-	//"compress/gzip"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
@@ -143,6 +142,8 @@ func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness
 	if err != nil {
 		return nil, nil, err
 	}
+	writer.SetConcurrency()
+
 	_, err = writer.Write(buf.Bytes())
 	if err != nil {
 		return nil, nil, err
