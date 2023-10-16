@@ -61,11 +61,22 @@ const BUCKET_FACTOR int = 10
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
-	proof, solution, err := SolveOnly(r1cs, pk, fullWitness, opts...)
+	/*proof, solution, err := SolveOnly(r1cs, pk, fullWitness, opts...)
+	if err != nil {
+		return nil, err
+	}*/
+
+	proof, compressedData, err := SolveAndCompress(r1cs, pk, fullWitness, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return ProveOnly(r1cs, pk, proof, solution)
+
+	proof, err = UncompressSolutionAndProve(r1cs, pk, proof, compressedData)
+	if err != nil {
+		return nil, err
+	}
+
+	return proof, err
 }
 
 func SolveOnly(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, *cs.R1CSSolution, error) {
