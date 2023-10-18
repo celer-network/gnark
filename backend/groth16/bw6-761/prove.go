@@ -185,7 +185,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	cpuNum := runtime.NumCPU()
 
-	// chBs1Done := make(chan error, 1)
+	chBs1Done := make(chan error, 1)
 	computeBS1 := func() {
 		<-chWireValuesB
 		// if _, merr := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
@@ -203,7 +203,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// chBs1Done <- nil
 	}
 
-	// chArDone := make(chan error, 1)
+	chArDone := make(chan error, 1)
 	computeAR1 := func() {
 		<-chWireValuesA
 		// if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
