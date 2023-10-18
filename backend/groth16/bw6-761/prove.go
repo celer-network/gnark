@@ -366,11 +366,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
-	go func() {
-		goicicle.CudaFree(wireValuesADevice.p)
-		goicicle.CudaFree(wireValuesBDevice.p)
-		goicicle.CudaFree(h)
-	}()
+	// go func() {
+	// 	goicicle.CudaFree(wireValuesADevice.p)
+	// 	goicicle.CudaFree(wireValuesBDevice.p)
+	// 	goicicle.CudaFree(h)
+	// }()
 
 	return proof, nil
 }
