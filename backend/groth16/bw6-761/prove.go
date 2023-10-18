@@ -106,12 +106,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	var h []fr.Element
+	// var h []fr.Element
 	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
-		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		// h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -183,9 +183,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	cpuNum := runtime.NumCPU()
+	// cpuNum := runtime.NumCPU()
 
-	chBs1Done := make(chan error, 1)
+	// chBs1Done := make(chan error, 1)
 	computeBS1 := func() {
 		<-chWireValuesB
 		// if _, merr := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
@@ -203,7 +203,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// chBs1Done <- nil
 	}
 
-	chArDone := make(chan error, 1)
+	// chArDone := make(chan error, 1)
 	computeAR1 := func() {
 		<-chWireValuesA
 		// if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
