@@ -81,6 +81,7 @@ func main() {
 		err = groth16.Verify(proof, vk, publicWitness)
 		if err != nil {
 			log.Fatal("groth16 verify failed...")
+			log.Fatalln(err)
 		}
 	}
 }
