@@ -31,7 +31,7 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
 	"math/big"
-	"runtime"
+	// "runtime"
 	"time"
 	"unsafe"
 )
