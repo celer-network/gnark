@@ -233,16 +233,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var krs, krs2, p1 curve.G1Jac
 		// chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		go func() {
-			// _, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
+		// go func() {
+		// 	// _, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
 
-			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
-			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-			fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
+		// 	icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+		// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+		// 	fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
 
-			// chKrs2Done <- merr
-		}()
+		// 	// chKrs2Done <- merr
+		// }()
+		icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
 
+		krs2 = *icicleRes
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
@@ -264,10 +267,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// 	return
 		// }
 
-		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
 		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
 
+		goicicle.CudaFree(scalars_d)
+
+		krs = icicleRes
 		krs.AddMixed(&deltas[2])
 
 		krs.AddAssign(&krs2)
