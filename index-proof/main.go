@@ -27,11 +27,11 @@ func main() {
 	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
 
 	log.Println("pk load done start.")
-	pk, vk, err = groth16.Setup(ccs)
+	/*pk, vk, err = groth16.Setup(ccs)
 	if err != nil {
 		log.Fatalln(err)
-	}
-	/*err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
+	}*/
+	err1 := ReadProvingKey("test_index_proof_circuit.pk", pk)
 	err2 := ReadVerifyingKey("test_index_proof_circuit.vk", vk)
 	if err1 != nil || err2 != nil {
 		log.Printf("Failed to read pk and vk, and try create, err:%v %v \n", err1, err2)
@@ -47,7 +47,7 @@ func main() {
 		if err2 != nil {
 			log.Fatalln(err)
 		}
-	}*/
+	}
 	log.Println("pk load done.")
 
 	var indexBuf []byte
@@ -71,15 +71,17 @@ func main() {
 	publicWitness, _ := witness.Public()
 
 	// groth16: Prove & Verify
-	proof, err := groth16.Prove(ccs, pk, witness)
-	if err != nil {
-		debug.PrintStack()
-		log.Fatal("prove computation failed...", err)
-	}
+	for i := 0; i < 10; i++ {
+		proof, err := groth16.Prove(ccs, pk, witness)
+		if err != nil {
+			debug.PrintStack()
+			log.Fatal("prove computation failed...", err)
+		}
 
-	err = groth16.Verify(proof, vk, publicWitness)
-	if err != nil {
-		log.Fatal("groth16 verify failed...")
+		err = groth16.Verify(proof, vk, publicWitness)
+		if err != nil {
+			log.Fatal("groth16 verify failed...")
+		}
 	}
 }
 
