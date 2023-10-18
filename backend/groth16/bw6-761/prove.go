@@ -106,27 +106,23 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	// var h []fr.Element
-	var hOnDevice unsafe.Pointer
+	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
-		// h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		h = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
-		// fmt.Println("hOnDevice: %d", hOnDevice)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var wireValuesA, wireValuesB []fr.Element
 	var wireValuesADevice, wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -145,7 +141,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesB = make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -167,10 +163,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// sample random r and s
 	var r, s big.Int
 	var _r, _s, _kr fr.Element
-	if _, err = _r.SetRandom(); err != nil {
+	if _, err := _r.SetRandom(); err != nil {
 		return nil, err
 	}
-	if _, err = _s.SetRandom(); err != nil {
+	if _, err := _s.SetRandom(); err != nil {
 		return nil, err
 	}
 	_kr.Mul(&_r, &_s).Neg(&_kr)
@@ -183,77 +179,44 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	// cpuNum := runtime.NumCPU()
-
-	chBs1Done := make(chan error, 1)
 	computeBS1 := func() {
 		<-chWireValuesB
-		// if _, merr := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
-		// 	chBs1Done <- merr
-		// 	close(chBs1Done)
-		// 	return
-		// }
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
-		fmt.Printf("icicleRes == bs1, %v \n", icicleRes.Equal(&bs1))
+		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
+		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
 
 		bs1 = *icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
-		chBs1Done <- nil
 	}
 
-	chArDone := make(chan error, 1)
 	computeAR1 := func() {
 		<-chWireValuesA
-		// if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
-		// 	chArDone <- merr
-		// 	close(chArDone)
-		// 	return
-		// }
 
-		icicleRes, _, merr, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
-		if merr != nil {
-			log.Err(merr)
-		}
+		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
 
 		ar = *icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		chArDone <- nil
 	}
 
-	chKrsDone := make(chan error, 1)
 	computeKRS := func() {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
 		var krs, krs2, p1 curve.G1Jac
-		// chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		// go func() {
-		// 	// _, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
 
-		// 	icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
-		// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-		// 	fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
-
-		// 	// chKrs2Done <- merr
-		// }()
-
-		icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-		krs2 = *icicleRes
 
+		krs2 = *icicleRes
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-		scals := make([]fr.Element, len(_wireValues[r1cs.GetNbPublicVariables():]))
-		copy(scals, _wireValues[r1cs.GetNbPublicVariables():])
+		scals := _wireValues[r1cs.GetNbPublicVariables():]
 
 		// Filter scalars matching infinity point indices
 		for _, indexToRemove := range pk.G1InfPointIndices.K {
@@ -265,15 +228,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
 		MontConvOnDevice(scalars_d, len(scals), false)
 
-		// if _, kmerr := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
-		// 	chKrsDone <- kmerr
-		// 	return
-		// }
-
 		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
-		
+
+		goicicle.CudaFree(scalars_d)
+
 		krs = *icicleRes
 		krs.AddMixed(&deltas[2])
 
@@ -286,58 +245,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
-		// x := 3
-		// for x != 0 {
-		// 	select {
-		// 	case derr := <-chKrs2Done:
-		// 		if derr != nil {
-		// 			chKrsDone <- derr
-		// 			return
-		// 		}
-		// 		krs.AddAssign(&krs2)
-		// 	case derr := <-chArDone:
-		// 		if derr != nil {
-		// 			chKrsDone <- derr
-		// 			return
-		// 		}
-		// 		p1.ScalarMultiplication(&ar, &s)
-		// 		krs.AddAssign(&p1)
-		// 	case derr := <-chBs1Done:
-		// 		if derr != nil {
-		// 			chKrsDone <- derr
-		// 			return
-		// 		}
-		// 		p1.ScalarMultiplication(&bs1, &r)
-		// 		krs.AddAssign(&p1)
-		// 	}
-		// 	x--
-		// }
-
-		// proof.Krs.FromJacobian(&krs)
-		chKrsDone <- nil
 	}
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
-		// nbTasks := cpuNum
-		// if nbTasks <= 16 {
-		// 	// if we don't have a lot of CPUs, this may artificially split the MSM
-		// 	nbTasks *= 2
-		// }
 		<-chWireValuesB
-		// if _, berr := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-		// 	log.Err(berr)
-		// 	return berr
-		// }
 
-		icicleG2Res, _, merr, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
-		if merr != nil {
-			log.Err(merr)
-		}
+		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
-		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
 		Bs = *icicleG2Res
 		deltaS.FromAffine(&pk.G2.Delta)
@@ -353,19 +270,22 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	go computeKRS()
-	go computeAR1()
-	go computeBS1()
-	if err = computeBS2(); err != nil {
+	startMSM := time.Now()
+	computeBS1()
+	computeAR1()
+	computeKRS()
+	if err := computeBS2(); err != nil {
 		return nil, err
 	}
+	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 
-	// wait for all parts of the proof to be computed.
-	// if err = <-chKrsDone; err != nil {
-	// 	return nil, err
-	// }
+	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
 
-	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	go func() {
+		goicicle.CudaFree(wireValuesADevice.p)
+		goicicle.CudaFree(wireValuesBDevice.p)
+		goicicle.CudaFree(h)
+	}()
 
 	return proof, nil
 }
