@@ -31,7 +31,6 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
 	"math/big"
-	"runtime"
 	"time"
 	"unsafe"
 )
@@ -106,7 +105,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	var h []fr.Element
+	// var h []fr.Element
 	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
