@@ -106,16 +106,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	// var h []fr.Element
-	var hOnDevice unsafe.Pointer
+	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		h = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		// h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
-		fmt.Println("hOnDevice: %d", hOnDevice)
+		// fmt.Println("h: %d", h)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -194,8 +194,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
-		fmt.Printf("icicleRes == bs1, %v \n", icicleRes.Equal(&bs1))
+		// fmt.Printf("icicleRes == bs1, %v \n", icicleRes.Equal(&bs1))
 
+		bs1 = *icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
 		chBs1Done <- nil
@@ -215,8 +216,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			log.Err(merr)
 		}
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
+		// fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
 
+		ar = *icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
@@ -231,16 +233,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var krs, krs2, p1 curve.G1Jac
 		// chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		go func() {
+		// go func() {
 			// _, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
 
-			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
-			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-			fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
+			// icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, 10, true)
+			// log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+			// fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
 
 			// chKrs2Done <- merr
-		}()
+		// }()
+		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
 
+		krs2 = *icicleRes
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
@@ -262,18 +267,23 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// 	return
 		// }
 
-		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
+		// fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
 
 		goicicle.CudaFree(scalars_d)
 
+		krs = *icicleRes
 		krs.AddMixed(&deltas[2])
+
 		krs.AddAssign(&krs2)
+
 		p1.ScalarMultiplication(&ar, &s)
 		krs.AddAssign(&p1)
+
 		p1.ScalarMultiplication(&bs1, &r)
 		krs.AddAssign(&p1)
+
 		proof.Krs.FromJacobian(&krs)
 		// x := 3
 		// for x != 0 {
@@ -328,6 +338,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
+		Bs = *icicleG2Res
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
 		Bs.AddAssign(&deltaS)
@@ -354,6 +365,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// }
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+
+	go func() {
+		goicicle.CudaFree(wireValuesADevice.p)
+		goicicle.CudaFree(wireValuesBDevice.p)
+		goicicle.CudaFree(h)
+	}()
 
 	return proof, nil
 }
