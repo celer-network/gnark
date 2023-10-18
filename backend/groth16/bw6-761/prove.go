@@ -198,6 +198,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
 		fmt.Printf("icicleRes == bs1, %v \n", icicleRes.Equal(&bs1))
 
+		bs1 = *icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
 		chBs1Done <- nil
@@ -219,6 +220,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
 		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
 
+		ar = *icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
