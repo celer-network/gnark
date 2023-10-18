@@ -306,16 +306,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
-		nbTasks := cpuNum
-		if nbTasks <= 16 {
-			// if we don't have a lot of CPUs, this may artificially split the MSM
-			nbTasks *= 2
-		}
+		// nbTasks := cpuNum
+		// if nbTasks <= 16 {
+		// 	// if we don't have a lot of CPUs, this may artificially split the MSM
+		// 	nbTasks *= 2
+		// }
 		<-chWireValuesB
-		if _, berr := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-			log.Err(berr)
-			return berr
-		}
+		// if _, berr := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+		// 	log.Err(berr)
+		// 	return berr
+		// }
 
 		icicleG2Res, _, merr, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
 		if merr != nil {
@@ -324,6 +324,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 		fmt.Printf("icicleRes == Bs, %v \n", icicleG2Res.Equal(&Bs))
 
+		Bs = *icicleG2Res
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
 		Bs.AddAssign(&deltaS)
