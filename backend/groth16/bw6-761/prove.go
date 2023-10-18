@@ -31,7 +31,7 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
 	"math/big"
-	"runtime"
+	// "runtime"
 	"time"
 	"unsafe"
 )
@@ -106,17 +106,17 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	var h []fr.Element
+	// var h []fr.Element
 	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
-		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		// h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
-		fmt.Println("hOnDevice: %d", hOnDevice)
+		// fmt.Println("hOnDevice: %d", hOnDevice)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -183,7 +183,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	cpuNum := runtime.NumCPU()
+	// cpuNum := runtime.NumCPU()
 
 	chBs1Done := make(chan error, 1)
 	computeBS1 := func() {
@@ -233,18 +233,21 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// however, having similar lengths for our tasks helps with parallelism
 
 		var krs, krs2, p1 curve.G1Jac
-		chKrs2Done := make(chan error, 1)
+		// chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		go func() {
-			_, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
+		icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+		// go func() {
+		// 	_, merr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: cpuNum / 2})
 
-			icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
-			log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-			fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
+		// 	icicleRes, _, _, timing := MsmOnDevice(hOnDevice, pk.G1Device.Z, sizeH, 10, true)
+		// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+		// 	fmt.Printf("icicleRes == krs2, %v \n", icicleRes.Equal(&krs2))
 
-			chKrs2Done <- merr
-		}()
+		// 	chKrs2Done <- merr
+		// }()
 
+		krs2 = *icicleRes
 		// filter the wire values if needed;
 		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
@@ -261,45 +264,56 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
 		MontConvOnDevice(scalars_d, len(scals), false)
 
-		if _, kmerr := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
-			chKrsDone <- kmerr
-			return
-		}
+		// if _, kmerr := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: cpuNum / 2}); err != nil {
+		// 	chKrsDone <- kmerr
+		// 	return
+		// }
 
-		icicleRes, _, _, timing := MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
+		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
 		fmt.Printf("icicleRes == KRS, %v \n", icicleRes.Equal(&krs))
-
+		
+		krs = *icicleRes
 		krs.AddMixed(&deltas[2])
-		x := 3
-		for x != 0 {
-			select {
-			case derr := <-chKrs2Done:
-				if derr != nil {
-					chKrsDone <- derr
-					return
-				}
-				krs.AddAssign(&krs2)
-			case derr := <-chArDone:
-				if derr != nil {
-					chKrsDone <- derr
-					return
-				}
-				p1.ScalarMultiplication(&ar, &s)
-				krs.AddAssign(&p1)
-			case derr := <-chBs1Done:
-				if derr != nil {
-					chKrsDone <- derr
-					return
-				}
-				p1.ScalarMultiplication(&bs1, &r)
-				krs.AddAssign(&p1)
-			}
-			x--
-		}
+
+		krs.AddAssign(&krs2)
+
+		p1.ScalarMultiplication(&ar, &s)
+		krs.AddAssign(&p1)
+
+		p1.ScalarMultiplication(&bs1, &r)
+		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
-		chKrsDone <- nil
+		// x := 3
+		// for x != 0 {
+		// 	select {
+		// 	case derr := <-chKrs2Done:
+		// 		if derr != nil {
+		// 			chKrsDone <- derr
+		// 			return
+		// 		}
+		// 		krs.AddAssign(&krs2)
+		// 	case derr := <-chArDone:
+		// 		if derr != nil {
+		// 			chKrsDone <- derr
+		// 			return
+		// 		}
+		// 		p1.ScalarMultiplication(&ar, &s)
+		// 		krs.AddAssign(&p1)
+		// 	case derr := <-chBs1Done:
+		// 		if derr != nil {
+		// 			chKrsDone <- derr
+		// 			return
+		// 		}
+		// 		p1.ScalarMultiplication(&bs1, &r)
+		// 		krs.AddAssign(&p1)
+		// 	}
+		// 	x--
+		// }
+
+		// proof.Krs.FromJacobian(&krs)
+		// chKrsDone <- nil
 	}
 
 	computeBS2 := func() error {
