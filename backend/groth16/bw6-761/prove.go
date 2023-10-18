@@ -273,7 +273,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		goicicle.CudaFree(scalars_d)
 
-		krs = icicleRes
+		krs = *icicleRes
 		krs.AddMixed(&deltas[2])
 
 		krs.AddAssign(&krs2)
