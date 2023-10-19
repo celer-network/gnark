@@ -17,15 +17,23 @@
 package groth16
 
 import (
+	"encoding/binary"
+	"fmt"
+	"math"
+	"math/big"
+	"math/bits"
+	"unsafe"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fp"
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr/pedersen"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/bw6-761"
-	"math/big"
-	"math/bits"
+	"github.com/ingonyama-zk/icicle/goicicle"
+	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bw6761"
 )
 
 // ProvingKey is used by a Groth16 prover to encode a proof of a statement
@@ -42,11 +50,30 @@ type ProvingKey struct {
 		K                  []curve.G1Affine // the indexes correspond to the private wires
 	}
 
+	G1Device struct {
+		A, B, K, Z unsafe.Pointer
+	}
+
+	G1InfPointIndices struct {
+		A, B, K, Z []int
+	}
+
+	DomainDevice struct {
+		Twiddles, TwiddlesInv     unsafe.Pointer
+		CosetTable, CosetTableInv unsafe.Pointer
+	}
+
 	// [β]2, [δ]2, [B(t)]2
 	G2 struct {
 		Beta, Delta curve.G2Affine
 		B           []curve.G2Affine
 	}
+
+	G2Device struct {
+		B unsafe.Pointer
+	}
+
+	DenDevice unsafe.Pointer
 
 	// if InfinityA[i] == true, the point G1.A[i] == infinity
 	InfinityA, InfinityB     []bool
@@ -303,7 +330,124 @@ func Setup(r1cs *cs.R1CS, pk *ProvingKey, vk *VerifyingKey) error {
 	// set domain
 	pk.Domain = *domain
 
+	pk.setupDevicePointers()
+
 	return nil
+}
+
+func (pk *ProvingKey) setupDevicePointers() {
+	n := int(pk.Domain.Cardinality)
+	sizeBytes := n * fr.Bytes
+
+	/*************************  Start Domain Device Setup  ***************************/
+
+	/*************************     CosetTableInv      ***************************/
+	cosetPowersInv_d, _ := goicicle.CudaMalloc(sizeBytes)
+	goicicle.CudaMemCpyHtoD[fr.Element](cosetPowersInv_d, pk.Domain.CosetTableInv, sizeBytes)
+	MontConvOnDevice(cosetPowersInv_d, len(pk.Domain.CosetTable), false)
+
+	pk.DomainDevice.CosetTableInv = cosetPowersInv_d
+
+	/*************************     CosetTable      ***************************/
+	cosetPowers_d, _ := goicicle.CudaMalloc(sizeBytes)
+	goicicle.CudaMemCpyHtoD[fr.Element](cosetPowers_d, pk.Domain.CosetTable, sizeBytes)
+	MontConvOnDevice(cosetPowers_d, len(pk.Domain.CosetTable), false)
+
+	pk.DomainDevice.CosetTable = cosetPowers_d
+
+	/*************************     Twiddles and Twiddles Inv    ***************************/
+	om_selector := int(math.Log(float64(n)) / math.Log(2))
+	twiddlesInv_d_gen, twddles_err := icicle.GenerateTwiddles(n, om_selector, true)
+
+	if twddles_err != nil {
+		fmt.Print(twiddlesInv_d_gen)
+	}
+
+	twiddles_d_gen, twddles_err := icicle.GenerateTwiddles(n, om_selector, false)
+	if twddles_err != nil {
+		fmt.Print(twiddles_d_gen)
+	}
+
+	pk.DomainDevice.Twiddles = twiddles_d_gen
+	pk.DomainDevice.TwiddlesInv = twiddlesInv_d_gen
+
+	/*************************     Den      ***************************/
+	var denI, oneI fr.Element
+	oneI.SetOne()
+	denI.Exp(pk.Domain.FrMultiplicativeGen, big.NewInt(int64(pk.Domain.Cardinality)))
+	denI.Sub(&denI, &oneI).Inverse(&denI)
+
+	den_d, _ := goicicle.CudaMalloc(sizeBytes)
+	log2Size := int(math.Floor(math.Log2(float64(n))))
+	denIcicle := NewFieldFromFrGnark(denI)
+	denIcicleArr := []icicle.G1ScalarField{*denIcicle}
+	for i := 0; i < log2Size; i++ {
+		denIcicleArr = append(denIcicleArr, denIcicleArr...)
+	}
+	for i := 0; i < (n - int(math.Pow(2, float64(log2Size)))); i++ {
+		denIcicleArr = append(denIcicleArr, *denIcicle)
+	}
+
+	goicicle.CudaMemCpyHtoD[icicle.G1ScalarField](den_d, denIcicleArr, sizeBytes)
+
+	pk.DenDevice = den_d
+
+	/*************************  End Domain Device Setup  ***************************/
+
+	/*************************  Start G1 Device Setup  ***************************/
+	/*************************     A      ***************************/
+	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
+	a_d, _ := goicicle.CudaMalloc(pointsBytesA)
+	iciclePointsA := BatchConvertFromG1Affine(pk.G1.A)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](a_d, iciclePointsA, pointsBytesA)
+
+	pk.G1Device.A = a_d
+
+	/*************************     B      ***************************/
+	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
+	b_d, _ := goicicle.CudaMalloc(pointsBytesB)
+	iciclePointsB := BatchConvertFromG1Affine(pk.G1.B)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](b_d, iciclePointsB, pointsBytesB)
+
+	pk.G1Device.B = b_d
+
+	/*************************     K      ***************************/
+	//remove infinity points and save indices for removing scalars later
+	// TODO, find better way to save mem
+	var pointsNoInfinity []curve.G1Affine
+	for i, gnarkPoint := range pk.G1.K {
+		if gnarkPoint.IsInfinity() {
+			pk.G1InfPointIndices.K = append(pk.G1InfPointIndices.K, i)
+		} else {
+			pointsNoInfinity = append(pointsNoInfinity, gnarkPoint)
+		}
+	}
+
+	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
+	k_d, _ := goicicle.CudaMalloc(pointsBytesK)
+	iciclePointsK := BatchConvertFromG1Affine(pointsNoInfinity)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](k_d, iciclePointsK, pointsBytesK)
+
+	pk.G1Device.K = k_d
+
+	/*************************     Z      ***************************/
+	pointsBytesZ := len(pk.G1.Z) * fp.Bytes * 2
+	z_d, _ := goicicle.CudaMalloc(pointsBytesZ)
+	iciclePointsZ := BatchConvertFromG1Affine(pk.G1.Z)
+	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](z_d, iciclePointsZ, pointsBytesZ)
+
+	pk.G1Device.Z = z_d
+	/*************************  End G1 Device Setup  ***************************/
+
+	/*************************  Start G2 Device Setup  ***************************/
+	// bw6761, G2 = G1, with X, Y, fp
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 2
+	b2_d, _ := goicicle.CudaMalloc(pointsBytesB2)
+	iciclePointsB2 := BatchConvertFromG2Affine(pk.G2.B)
+	goicicle.CudaMemCpyHtoD[icicle.G2PointAffine](b2_d, iciclePointsB2, pointsBytesB2)
+	pk.G2Device.B = b2_d
+	/*************************  End G2 Device Setup  ***************************/
+
 }
 
 // Precompute sets e, -[δ]2, -[γ]2
@@ -636,4 +780,81 @@ func bitReverse(a []curve.G1Affine) {
 			a[i], a[irev] = a[irev], a[i]
 		}
 	}
+}
+
+func BatchConvertFromG1Affine(elements []curve.G1Affine) []icicle.G1PointAffine {
+	var newElements []icicle.G1PointAffine
+	for _, e := range elements {
+		var newElement icicle.G1ProjectivePoint
+		FromG1AffineGnark(&e, &newElement)
+
+		newElements = append(newElements, *newElement.StripZ())
+	}
+	return newElements
+}
+
+func FromG1AffineGnark(gnark *curve.G1Affine, p *icicle.G1ProjectivePoint) *icicle.G1ProjectivePoint {
+	var z icicle.G1BaseField
+	z.SetOne()
+
+	p.X = *NewFieldFromFpGnark(gnark.X)
+	p.Y = *NewFieldFromFpGnark(gnark.Y)
+	p.Z = z
+
+	return p
+}
+
+func NewFieldFromFrGnark(element fr.Element) *icicle.G1ScalarField {
+	S := ConvertUint64ArrToUint32Arr6(element.Bits()) // get non-montgomry
+
+	return &icicle.G1ScalarField{S}
+}
+
+func NewFieldFromFpGnark(element fp.Element) *icicle.G1BaseField {
+	S := ConvertUint64ArrToUint32Arr12(element.Bits()) // get non-montgomry
+
+	return &icicle.G1BaseField{S}
+}
+
+func ConvertUint64ArrToUint32Arr6(arr64 [6]uint64) [12]uint32 {
+	var arr32 [12]uint32
+	for i, v := range arr64 {
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, v)
+
+		arr32[i*2] = binary.LittleEndian.Uint32(b[0:4])
+		arr32[i*2+1] = binary.LittleEndian.Uint32(b[4:8])
+	}
+
+	return arr32
+}
+
+func ConvertUint64ArrToUint32Arr12(arr64 [12]uint64) [24]uint32 {
+	var arr32 [24]uint32
+	for i, v := range arr64 {
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, v)
+
+		arr32[i*2] = binary.LittleEndian.Uint32(b[0:4])
+		arr32[i*2+1] = binary.LittleEndian.Uint32(b[4:8])
+	}
+
+	return arr32
+}
+
+func BatchConvertFromG2Affine(elements []curve.G2Affine) []icicle.G2PointAffine {
+	var newElements []icicle.G2PointAffine
+	for _, gg2Affine := range elements {
+		var newElement icicle.G2PointAffine
+		G2AffineFromGnarkAffine(&gg2Affine, &newElement)
+
+		newElements = append(newElements, newElement)
+	}
+	return newElements
+}
+
+func G2AffineFromGnarkAffine(gnark *curve.G2Affine, g *icicle.G2PointAffine) *icicle.G2PointAffine {
+	g.X = gnark.X.Bits()
+	g.Y = gnark.Y.Bits()
+	return g
 }
