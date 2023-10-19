@@ -434,8 +434,6 @@ github.com/influxdata/tdigest v0.0.0-20181121200506-bf2b5ad3c0a9/go.mod h1:Js0mq
 github.com/influxdata/usage-client v0.0.0-20160829180054-6d3895376368/go.mod h1:Wbbw6tYNvwa5dlB6304Sd+82Z3f7PmVZHVKU637d4po=
 github.com/ingonyama-zk/icicle v0.0.0-20230831061944-5667f32bfedd h1:fiJnL33Sypr5P2O4apRzajR3/HVkTqpzGSijX0IfglA=
 github.com/ingonyama-zk/icicle v0.0.0-20230831061944-5667f32bfedd/go.mod h1:kAK8/EoN7fUEmakzgZIYdWy1a2rBnpCaZLqSHwZWxEk=
-github.com/ingonyama-zk/iciclegnark v0.0.0-20230901124553-e5b9a843dede h1:3BkOWtaAhqzn7NlS9agCYTJ9l1gXkIa6aC4aFdfAnQc=
-github.com/ingonyama-zk/iciclegnark v0.0.0-20230901124553-e5b9a843dede/go.mod h1:2oOaaVYILmoG2tLETR0xrHqYhkko0QjuEFt95sJu42g=
 github.com/iris-contrib/blackfriday v2.0.0+incompatible/go.mod h1:UzZ2bDEoaSGPbkg6SAB4att1aAwTmVIx/5gCVqeyUdI=
 github.com/iris-contrib/go.uuid v2.0.0+incompatible/go.mod h1:iz2lgM/1UnEf1kP0L/+fafWORmlnuysV2EMP8MW+qe0=
 github.com/iris-contrib/httpexpect/v2 v2.3.1/go.mod h1:ICTf89VBKSD3KB0fsyyHviKF8G8hyepP0dOXJPWz3T0=
