@@ -150,7 +150,7 @@ func SolveAndCompress(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness
 		return nil, nil, err
 	}
 	var bufCompressed bytes.Buffer
-	writer, err := gzip.NewWriterLevel(&bufCompressed, gzip.BestSpeed)
+	writer, err := gzip.NewWriterLevel(&bufCompressed, gzip.BestCompression)
 	if err != nil {
 		return nil, nil, err
 	}
