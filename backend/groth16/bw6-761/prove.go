@@ -183,7 +183,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		icicleRes, _, _, timing := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM BS1 MSM")
-		fmt.Printf("icicleRes == bs1, %v \n", icicleRes.Equal(&bs1))
 
 		bs1 = *icicleRes
 		bs1.AddMixed(&pk.G1.Beta)
@@ -193,12 +192,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeAR1 := func() {
 		<-chWireValuesA
 
-		icicleRes, _, merr, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
-		if merr != nil {
-			log.Err(merr)
-		}
+		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-		fmt.Printf("icicleRes == ar, %v \n", icicleRes.Equal(&ar))
 
 		ar = *icicleRes
 		ar.AddMixed(&pk.G1.Alpha)
@@ -255,10 +250,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var Bs, deltaS curve.G2Jac
 		<-chWireValuesB
 
-		icicleG2Res, _, merr, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
-		if merr != nil {
-			log.Err(merr)
-		}
+		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, 10, true)
 		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 
 		Bs = *icicleG2Res
@@ -275,14 +267,28 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	go computeKRS()
-	go computeAR1()
-	go computeBS1()
-	if err = computeBS2(); err != nil {
+	// go computeKRS()
+	// go computeAR1()
+	// go computeBS1()
+	// if err = computeBS2(); err != nil {
+	// 	return nil, err
+	// }
+
+	startMSM := time.Now()
+	computeBS1()
+	computeAR1()
+	computeKRS()
+	if err := computeBS2(); err != nil {
 		return nil, err
 	}
+	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
+	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
 
-	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	go func() {
+		goicicle.CudaFree(wireValuesADevice.p)
+		goicicle.CudaFree(wireValuesBDevice.p)
+		goicicle.CudaFree(hOnDevice)
+	}()
 
 	return proof, nil
 }
