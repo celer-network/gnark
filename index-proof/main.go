@@ -2,7 +2,9 @@ package main
 
 import (
 	"log"
-	// "github.com/consensys/gnark/backend/groth16"
+	"os"
+
+	"github.com/consensys/gnark/backend/groth16"
 )
 
 func main() {
@@ -77,48 +79,48 @@ func main() {
 	// }
 }
 
-// func WriteProvingKey(pk groth16.ProvingKey, filename string) error {
-// 	f, err := os.Create(filename)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	_, err = pk.WriteTo(f)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+func WriteProvingKey(pk groth16.ProvingKey, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	_, err = pk.WriteTo(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
-// func ReadProvingKey(filename string, pk groth16.ProvingKey) error {
-// 	f, err := os.Open(filename)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer f.Close()
+func ReadProvingKey(filename string, pk groth16.ProvingKey) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-// 	_, err = pk.UnsafeReadFrom(f)
-// 	return err
-// }
+	_, err = pk.UnsafeReadFrom(f)
+	return err
+}
 
-// func WriteVerifyingKey(vk groth16.VerifyingKey, filename string) error {
-// 	f, err := os.Create(filename)
-// 	if err != nil {
-// 		return err
-// 	}
+func WriteVerifyingKey(vk groth16.VerifyingKey, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
 
-// 	_, err = vk.WriteTo(f)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+	_, err = vk.WriteTo(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
-// func ReadVerifyingKey(filename string, vk groth16.VerifyingKey) error {
-// 	f, _ := os.Open(filename)
-// 	defer f.Close()
-// 	_, err := vk.ReadFrom(f)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+func ReadVerifyingKey(filename string, vk groth16.VerifyingKey) error {
+	f, _ := os.Open(filename)
+	defer f.Close()
+	_, err := vk.ReadFrom(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
