@@ -117,12 +117,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var wireValuesA, wireValuesB []fr.Element
 	var wireValuesADevice, wireValuesBDevice OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -141,7 +140,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesB = make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -163,10 +162,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// sample random r and s
 	var r, s big.Int
 	var _r, _s, _kr fr.Element
-	if _, err = _r.SetRandom(); err != nil {
+	if _, err := _r.SetRandom(); err != nil {
 		return nil, err
 	}
-	if _, err = _s.SetRandom(); err != nil {
+	if _, err := _s.SetRandom(); err != nil {
 		return nil, err
 	}
 	_kr.Mul(&_r, &_s).Neg(&_kr)
