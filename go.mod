@@ -7,6 +7,7 @@ require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/consensys/bavard v0.1.13
 	github.com/consensys/gnark-crypto v0.12.1
+	github.com/ethereum/go-ethereum v1.13.2
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230309165930-d61513b1440d
@@ -21,6 +22,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/holiman/uint256 v1.2.3 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
