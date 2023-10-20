@@ -21,13 +21,15 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint/bls12-377"
 	"github.com/consensys/gnark/constraint/solver"
+	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
-	"github.com/ingonyama-zk/icicle/goicicle"
-	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
+	// "github.com/ingonyama-zk/icicle/goicicle"
+	// icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
 	"runtime"
 	"time"
@@ -104,16 +106,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	var h unsafe.Pointer
-
+	var h []fr.Element
+	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
-		println("h: %d", h)
+
+		println(hOnDevice)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -193,56 +197,56 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	chKrsDone := make(chan error, 1)
-	// computeKRS := func() {
-	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-	// 	// however, having similar lengths for our tasks helps with parallelism
+	computeKRS := func() {
+		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+		// however, having similar lengths for our tasks helps with parallelism
 
-	// 	var krs, krs2, p1 curve.G1Jac
-	// 	chKrs2Done := make(chan error, 1)
-	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-	// 	go func() {
-	// 		_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
-	// 		chKrs2Done <- err
-	// 	}()
+		var krs, krs2, p1 curve.G1Jac
+		chKrs2Done := make(chan error, 1)
+		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+		go func() {
+			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+			chKrs2Done <- err
+		}()
 
-	// 	// filter the wire values if needed;
-	// 	_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+		// filter the wire values if needed;
+		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-	// 	if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chKrsDone <- err
-	// 		return
-	// 	}
-	// 	krs.AddMixed(&deltas[2])
-	// 	n := 3
-	// 	for n != 0 {
-	// 		select {
-	// 		case err := <-chKrs2Done:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			krs.AddAssign(&krs2)
-	// 		case err := <-chArDone:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			p1.ScalarMultiplication(&ar, &s)
-	// 			krs.AddAssign(&p1)
-	// 		case err := <-chBs1Done:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			p1.ScalarMultiplication(&bs1, &r)
-	// 			krs.AddAssign(&p1)
-	// 		}
-	// 		n--
-	// 	}
+		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chKrsDone <- err
+			return
+		}
+		krs.AddMixed(&deltas[2])
+		n := 3
+		for n != 0 {
+			select {
+			case err := <-chKrs2Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				krs.AddAssign(&krs2)
+			case err := <-chArDone:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&ar, &s)
+				krs.AddAssign(&p1)
+			case err := <-chBs1Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&bs1, &r)
+				krs.AddAssign(&p1)
+			}
+			n--
+		}
 
-	// 	proof.Krs.FromJacobian(&krs)
-	// 	chKrsDone <- nil
-	// }
+		proof.Krs.FromJacobian(&krs)
+		chKrsDone <- nil
+	}
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
@@ -271,7 +275,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	// go computeKRS()
+	go computeKRS()
 	go computeAR1()
 	go computeBS1()
 	if err := computeBS2(); err != nil {
@@ -311,7 +315,52 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	return r
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+
+	n := len(a)
+
+	// add padding to ensure input length is domain cardinality
+	padding := make([]fr.Element, int(domain.Cardinality)-n)
+	a = append(a, padding...)
+	b = append(b, padding...)
+	c = append(c, padding...)
+	n = len(a)
+
+	domain.FFTInverse(a, fft.DIF)
+	domain.FFTInverse(b, fft.DIF)
+	domain.FFTInverse(c, fft.DIF)
+
+	domain.FFT(a, fft.DIT, fft.OnCoset())
+	domain.FFT(b, fft.DIT, fft.OnCoset())
+	domain.FFT(c, fft.DIT, fft.OnCoset())
+
+	var den, one fr.Element
+	one.SetOne()
+	den.Exp(domain.FrMultiplicativeGen, big.NewInt(int64(domain.Cardinality)))
+	den.Sub(&den, &one).Inverse(&den)
+
+	// h = ifft_coset(ca o cb - cc)
+	// reusing a to avoid unnecessary memory allocation
+	utils.Parallelize(n, func(start, end int) {
+		for i := start; i < end; i++ {
+			a[i].Mul(&a[i], &b[i]).
+				Sub(&a[i], &c[i]).
+				Mul(&a[i], &den)
+		}
+	})
+
+	// ifft_coset
+	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
+
+	return a
+}
+
+func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
