@@ -21,16 +21,17 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint/bls12-377"
 	"github.com/consensys/gnark/constraint/solver"
-	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/ingonyama-zk/icicle/goicicle"
+	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
 	"runtime"
 	"time"
+	"unsafe"
 )
 
 // Proof represents a Groth16 proof that was encoded with a ProvingKey and can be verified
@@ -103,14 +104,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
-	var h []fr.Element
+	var h unsafe.Pointer
+
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		h = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
+		println("h: %d", h)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -190,56 +193,56 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	chKrsDone := make(chan error, 1)
-	computeKRS := func() {
-		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-		// however, having similar lengths for our tasks helps with parallelism
+	// computeKRS := func() {
+	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// 	// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 curve.G1Jac
-		chKrs2Done := make(chan error, 1)
-		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		go func() {
-			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
-			chKrs2Done <- err
-		}()
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	chKrs2Done := make(chan error, 1)
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+	// 	go func() {
+	// 		_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+	// 		chKrs2Done <- err
+	// 	}()
 
-		// filter the wire values if needed;
-		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+	// 	// filter the wire values if needed;
+	// 	_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chKrsDone <- err
-			return
-		}
-		krs.AddMixed(&deltas[2])
-		n := 3
-		for n != 0 {
-			select {
-			case err := <-chKrs2Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				krs.AddAssign(&krs2)
-			case err := <-chArDone:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&ar, &s)
-				krs.AddAssign(&p1)
-			case err := <-chBs1Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&bs1, &r)
-				krs.AddAssign(&p1)
-			}
-			n--
-		}
+	// 	if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+	// 		chKrsDone <- err
+	// 		return
+	// 	}
+	// 	krs.AddMixed(&deltas[2])
+	// 	n := 3
+	// 	for n != 0 {
+	// 		select {
+	// 		case err := <-chKrs2Done:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			krs.AddAssign(&krs2)
+	// 		case err := <-chArDone:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			p1.ScalarMultiplication(&ar, &s)
+	// 			krs.AddAssign(&p1)
+	// 		case err := <-chBs1Done:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			p1.ScalarMultiplication(&bs1, &r)
+	// 			krs.AddAssign(&p1)
+	// 		}
+	// 		n--
+	// 	}
 
-		proof.Krs.FromJacobian(&krs)
-		chKrsDone <- nil
-	}
+	// 	proof.Krs.FromJacobian(&krs)
+	// 	chKrsDone <- nil
+	// }
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
@@ -268,7 +271,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	go computeKRS()
+	// go computeKRS()
 	go computeAR1()
 	go computeBS1()
 	if err := computeBS2(); err != nil {
@@ -308,7 +311,7 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	return r
 }
 
-func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -318,37 +321,73 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
-	padding := make([]fr.Element, int(domain.Cardinality)-n)
+	padding := make([]fr.Element, int(pk.Domain.Cardinality)-n)
 	a = append(a, padding...)
 	b = append(b, padding...)
 	c = append(c, padding...)
 	n = len(a)
 
-	domain.FFTInverse(a, fft.DIF)
-	domain.FFTInverse(b, fft.DIF)
-	domain.FFTInverse(c, fft.DIF)
+	sizeBytes := n * fr.Bytes
 
-	domain.FFT(a, fft.DIT, fft.OnCoset())
-	domain.FFT(b, fft.DIT, fft.OnCoset())
-	domain.FFT(c, fft.DIT, fft.OnCoset())
+	log := logger.Logger()
 
-	var den, one fr.Element
-	one.SetOne()
-	den.Exp(domain.FrMultiplicativeGen, big.NewInt(int64(domain.Cardinality)))
-	den.Sub(&den, &one).Inverse(&den)
+	/*********** Copy a,b,c to Device Start ************/
+	computeHTime := time.Now()
+	copyADone := make(chan unsafe.Pointer, 1)
+	copyBDone := make(chan unsafe.Pointer, 1)
+	copyCDone := make(chan unsafe.Pointer, 1)
 
-	// h = ifft_coset(ca o cb - cc)
-	// reusing a to avoid unnecessary memory allocation
-	utils.Parallelize(n, func(start, end int) {
-		for i := start; i < end; i++ {
-			a[i].Mul(&a[i], &b[i]).
-				Sub(&a[i], &c[i]).
-				Mul(&a[i], &den)
-		}
-	})
+	convTime := time.Now()
+	go CopyToDevice(a, sizeBytes, copyADone)
+	go CopyToDevice(b, sizeBytes, copyBDone)
+	go CopyToDevice(c, sizeBytes, copyCDone)
 
-	// ifft_coset
-	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
+	a_device := <-copyADone
+	b_device := <-copyBDone
+	c_device := <-copyCDone
 
-	return a
+	log.Debug().Dur("took", time.Since(convTime)).Msg("Icicle API: Conv and Copy a,b,c")
+	/*********** Copy a,b,c to Device End ************/
+
+	computeInttNttDone := make(chan error, 1)
+	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
+		a_intt_d, timings_a := INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		log.Debug().Dur("took", timings_a[0]).Msg("Icicle API: INTT Reverse")
+		log.Debug().Dur("took", timings_a[1]).Msg("Icicle API: INTT Interp")
+
+		timing_a2 := NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		log.Debug().Dur("took", timing_a2[1]).Msg("Icicle API: NTT Coset Reverse")
+		log.Debug().Dur("took", timing_a2[0]).Msg("Icicle API: NTT Coset Eval")
+
+		computeInttNttDone <- nil
+
+		goicicle.CudaFree(a_intt_d)
+	}
+
+	computeInttNttTime := time.Now()
+	go computeInttNttOnDevice(a_device)
+	go computeInttNttOnDevice(b_device)
+	go computeInttNttOnDevice(c_device)
+	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
+	log.Debug().Dur("took", time.Since(computeInttNttTime)).Msg("Icicle API: INTT and NTT")
+
+	poltime := PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	log.Debug().Dur("took", poltime[0]).Msg("Icicle API: PolyOps Mul a b")
+	log.Debug().Dur("took", poltime[1]).Msg("Icicle API: PolyOps Sub a c")
+	log.Debug().Dur("took", poltime[2]).Msg("Icicle API: PolyOps Mul a den")
+
+	h, timings_final := INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	log.Debug().Dur("took", timings_final[0]).Msg("Icicle API: INTT Coset Reverse")
+	log.Debug().Dur("took", timings_final[1]).Msg("Icicle API: INTT Coset Interp")
+
+	go func() {
+		goicicle.CudaFree(a_device)
+		goicicle.CudaFree(b_device)
+		goicicle.CudaFree(c_device)
+	}()
+
+	icicle.ReverseScalars(h, n)
+	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
+
+	return h
 }
