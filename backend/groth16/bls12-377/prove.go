@@ -107,17 +107,17 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
-	var hOnDevice unsafe.Pointer
+	// var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
-		hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		// hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
 
-		println(hOnDevice)
+		// println(hOnDevice)
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
