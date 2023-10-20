@@ -124,6 +124,7 @@ func (vk *VerifyingKey) writeTo(w io.Writer, raw bool) (int64, error) {
 	if err := enc.Encode(vk.G1.K); err != nil {
 		return enc.BytesWritten(), err
 	}
+
 	return enc.BytesWritten(), nil
 }
 
@@ -288,5 +289,9 @@ func (pk *ProvingKey) readFrom(r io.Reader, decOptions ...func(*curve.Decoder)) 
 		return n + dec.BytesRead(), err
 	}
 
-	return n + dec.BytesRead(), nil
+	size := n + dec.BytesRead()
+
+	pk.setupDevicePointers()
+
+	return size, nil
 }
