@@ -107,17 +107,23 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
-	// var hOnDevice unsafe.Pointer
+	var h_err error
+	var hOnDevice unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		// hOnDevice = computeHOnDevice(solution.A, solution.B, solution.C, pk)
+		hOnDevice, h_err = computeHOnDevice(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
 		chHDone <- struct{}{}
 
-		// println(hOnDevice)
+		
+		if h_err != nil {
+			println(h_err)
+			println(hOnDevice)
+		}
 	}()
 
 	// we need to copy and filter the wireValues for each multi exp
@@ -360,7 +366,7 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	return a
 }
 
-func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -435,8 +441,11 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		goicicle.CudaFree(c_device)
 	}()
 
-	icicle.ReverseScalars(h, n)
+	_, err := icicle.ReverseScalars(h, n)
+	if err != nil {
+		fmt.Println(err)
+	}
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
-	return h
+	return h, nil
 }
