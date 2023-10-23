@@ -1,10 +1,18 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/index-proof/core"
+	"github.com/consensys/gnark/index-proof/utils"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func main() {
@@ -13,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatal("frontend.Compile")
 	}
-	log.Printf("******")
+
 	// groth16 zkSNARK: Setup
 	var pk = groth16.NewProvingKey(ecc.BW6_761)
 	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
@@ -58,7 +66,6 @@ func main() {
 		Index:     1,
 		RlpString: witnessInput,
 	}
-
 	witness, _ := frontend.NewWitness(&assignment, ecc.BW6_761.ScalarField())
 	publicWitness, _ := witness.Public()
 
