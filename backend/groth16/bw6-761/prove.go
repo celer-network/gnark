@@ -527,5 +527,3 @@ func KrsMsmOnDevice(h, Z, deviceK unsafe.Pointer, cardinality uint64, wireValues
 	Krs.FromJacobian(krs)
 	return nil
 }
-
-
