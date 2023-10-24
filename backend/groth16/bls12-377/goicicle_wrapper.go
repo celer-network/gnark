@@ -173,8 +173,7 @@ func MsmG2OnDevice2(scalars_d, points_d unsafe.Pointer, count, bucketFactor int,
 }
 
 func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
-	// bw6761, G2 = G1, with X, Y, Z, fp
-	g2ProjPointBytes := fp.Bytes * 3
+	g2ProjPointBytes := fp.Bytes * 6
 	out_d, err := cudawrapper.CudaMalloc(g2ProjPointBytes)
 	if err != nil {
 		return nil, nil, err, time.Second
