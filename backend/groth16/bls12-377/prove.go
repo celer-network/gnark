@@ -142,26 +142,26 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	computeBS1 := func() {
-		<-chWireValuesB
-
-		icicleRes, _, _, time := MsmOnDevice2(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
-
-		bs1 = icicleRes
-		bs1.AddMixed(&pk.G1.Beta)
-		bs1.AddMixed(&deltas[1])
-	}
-	// computeBS1 := func() error {
+	// computeBS1 := func() {
 	// 	<-chWireValuesB
 
-	// 	var bs1Err error
-	// 	bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
-	// 	if bs1Err != nil {
-	// 		return bs1Err
-	// 	}
-	// 	return nil
+	// 	icicleRes, _, _, time := MsmOnDevice2(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
+
+	// 	bs1 = icicleRes
+	// 	bs1.AddMixed(&pk.G1.Beta)
+	// 	bs1.AddMixed(&deltas[1])
 	// }
+	computeBS1 := func() error {
+		<-chWireValuesB
+
+		var bs1Err error
+		_, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
+		if bs1Err != nil {
+			return bs1Err
+		}
+		return nil
+	}
 
 	computeAR1 := func() {
 		<-chWireValuesA
