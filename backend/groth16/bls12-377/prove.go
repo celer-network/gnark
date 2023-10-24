@@ -142,127 +142,127 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar *curve.G1Jac
 
-	// computeBS1 := func() {
-	// 	<-chWireValuesB
-
-	// 	icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-	// 	log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
-
-	// 	bs1 = icicleRes
-	// 	bs1.AddMixed(&pk.G1.Beta)
-	// 	bs1.AddMixed(&deltas[1])
-	// }
-	computeBS1 := func() error {
+	computeBS1 := func() {
 		<-chWireValuesB
 
-		var bs1Err error
-		bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
-		if bs1Err != nil {
-			return bs1Err
-		}
-		return nil
+		icicleRes, _, _, time := MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", time).Msg("Icicle API: MSM BS1 MSM")
+
+		bs1 = icicleRes
+		bs1.AddMixed(&pk.G1.Beta)
+		bs1.AddMixed(&deltas[1])
 	}
-
-	// computeAR1 := func() {
-	// 	<-chWireValuesA
-
-	// 	icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
-	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-
-	// 	ar = icicleRes
-	// 	ar.AddMixed(&pk.G1.Alpha)
-	// 	ar.AddMixed(&deltas[0])
-	// 	proof.Ar.FromJacobian(&ar)
-	// }
-	computeAR1 := func() error {
-		<-chWireValuesA
-		var arErr error
-		ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
-		if arErr != nil {
-			return arErr
-		}
-		return nil
-	}
-
-	// computeKRS := func() {
-	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-	// 	// however, having similar lengths for our tasks helps with parallelism
-
-	// 	var krs, krs2, p1 curve.G1Jac
-	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-
-	// 	icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
-	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
-
-	// 	krs2 = icicleRes
-	// 	// filter the wire values if needed;
-	// 	_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
-
-	// 	scals := _wireValues[r1cs.GetNbPublicVariables():]
-
-	// 	// Filter scalars matching infinity point indices
-	// 	for _, indexToRemove := range pk.G1InfPointIndices.K {
-	// 		scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
-	// 	}
-
-	// 	scalarBytes := len(scals) * fr.Bytes
-	// 	scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
-	// 	goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
-	// 	MontConvOnDevice(scalars_d, len(scals), false)
-
-	// 	icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
-	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
-
-	// 	goicicle.CudaFree(scalars_d)
-
-	// 	krs = icicleRes
-	// 	krs.AddMixed(&deltas[2])
-
-	// 	krs.AddAssign(&krs2)
-
-	// 	p1.ScalarMultiplication(&ar, &s)
-	// 	krs.AddAssign(&p1)
-
-	// 	p1.ScalarMultiplication(&bs1, &r)
-	// 	krs.AddAssign(&p1)
-
-	// 	proof.Krs.FromJacobian(&krs)
-	// }
-
-	computeKRS := func() error {
-		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-		// however, having similar lengths for our tasks helps with parallelism
-		krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
-			r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, s, r)
-		if krsErr != nil {
-			return krsErr
-		}
-		return nil
-	}
-
-	// computeBS2 := func() error {
-	// 	// Bs2 (1 multi exp G2 - size = len(wires))
-	// 	var Bs, deltaS curve.G2Jac
-
+	// computeBS1 := func() error {
 	// 	<-chWireValuesB
 
-	// 	icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+	// 	var bs1Err error
+	// 	bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
+	// 	if bs1Err != nil {
+	// 		return bs1Err
+	// 	}
+	// 	return nil
+	// }
 
-	// 	Bs = icicleG2Res
-	// 	deltaS.FromAffine(&pk.G2.Delta)
-	// 	deltaS.ScalarMultiplication(&deltaS, &s)
-	// 	Bs.AddAssign(&deltaS)
-	// 	Bs.AddMixed(&pk.G2.Beta)
+	computeAR1 := func() {
+		<-chWireValuesA
 
-	// 	proof.Bs.FromJacobian(&Bs)
+		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+
+		ar = icicleRes
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(*&ar)
+	}
+	// computeAR1 := func() error {
+	// 	<-chWireValuesA
+	// 	var arErr error
+	// 	ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
+	// 	if arErr != nil {
+	// 		return arErr
+	// 	}
+	// 	return nil
+	// }
+
+	computeKRS := func() {
+		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+		// however, having similar lengths for our tasks helps with parallelism
+
+		var krs, krs2, p1 curve.G1Jac
+		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+
+		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+
+		krs2 = *icicleRes
+		// filter the wire values if needed;
+		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+
+		scals := _wireValues[r1cs.GetNbPublicVariables():]
+
+		// Filter scalars matching infinity point indices
+		for _, indexToRemove := range pk.G1InfPointIndices.K {
+			scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+		}
+
+		scalarBytes := len(scals) * fr.Bytes
+		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+		MontConvOnDevice(scalars_d, len(scals), false)
+
+		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+
+		goicicle.CudaFree(scalars_d)
+
+		krs = *icicleRes
+		krs.AddMixed(&deltas[2])
+
+		krs.AddAssign(&krs2)
+
+		p1.ScalarMultiplication(*&ar, *&s)
+		krs.AddAssign(&p1)
+
+		p1.ScalarMultiplication(*&bs1, *&r)
+		krs.AddAssign(&p1)
+
+		proof.Krs.FromJacobian(&krs)
+	}
+
+	// computeKRS := func() error {
+	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// 	// however, having similar lengths for our tasks helps with parallelism
+	// 	krsErr := KrsMsmOnDevice(h, pk.G1Device.Z, pk.G1Device.K, pk.Domain.Cardinality, wireValues,
+	// 		r1cs.CommitmentInfo.PrivateToPublic(), pk.G1InfPointIndices.K, r1cs.GetNbPublicVariables(), &deltas[2], &proof.Krs, ar, bs1, s, r)
+	// 	if krsErr != nil {
+	// 		return krsErr
+	// 	}
 	// 	return nil
 	// }
 
 	computeBS2 := func() error {
+		// Bs2 (1 multi exp G2 - size = len(wires))
+		var Bs, deltaS curve.G2Jac
+
 		<-chWireValuesB
-		return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, s, &proof.Bs)
+
+		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+
+		Bs = *icicleG2Res
+		deltaS.FromAffine(&pk.G2.Delta)
+		deltaS.ScalarMultiplication(&deltaS, *&s)
+		Bs.AddAssign(&deltaS)
+		Bs.AddMixed(&pk.G2.Beta)
+
+		proof.Bs.FromJacobian(&Bs)
+		return nil
 	}
+
+	// computeBS2 := func() error {
+	// 	<-chWireValuesB
+	// 	return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, s, &proof.Bs)
+	// }
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
@@ -278,25 +278,24 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	// schedule our proof part computations
-	// teKRS(startMSM := time.Now()
-	// startMSM := time.Now()
-
-	// computeBS1()
-	// computeAR1()
-	// compu)
 	startMSM := time.Now()
-	if err = computeBS1(); err != nil {
-		return nil, err
-	}
-	if err = computeAR1(); err != nil {
-		return nil, err
-	}
-	if err = computeKRS(); err != nil {
-		return nil, err
-	}
-	if err = computeBS2(); err != nil {
-		return nil, err
-	}
+	computeBS1()
+	computeAR1()
+	computeKRS()
+	computeBS2()
+	// startMSM := time.Now()
+	// if err = computeBS1(); err != nil {
+	// 	return nil, err
+	// }
+	// if err = computeAR1(); err != nil {
+	// 	return nil, err
+	// }
+	// if err = computeKRS(); err != nil {
+	// 	return nil, err
+	// }
+	// if err = computeBS2(); err != nil {
+	// 	return nil, err
+	// }
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
