@@ -119,44 +119,55 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesADevice, wireValuesBDevice OnDeviceData
+	var wireValuesADeviceErr, wireValuesBDeviceErr error
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
+	// go func() {
+	// 	wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+	// 	for i, j := 0, 0; j < len(wireValuesA); i++ {
+	// 		if pk.InfinityA[i] {
+	// 			continue
+	// 		}
+	// 		wireValuesA[j] = wireValues[i]
+	// 		j++
+	// 	}
+
+	// 	wireValuesASize := len(wireValuesA)
+	// 	scalarBytes := wireValuesASize * fr.Bytes
+	// 	wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+	// 	goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
+	// 	MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
+	// 	wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
+
+	// 	close(chWireValuesA)
+	// }()
+	// go func() {
+	// 	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+	// 	for i, j := 0, 0; j < len(wireValuesB); i++ {
+	// 		if pk.InfinityB[i] {
+	// 			continue
+	// 		}
+	// 		wireValuesB[j] = wireValues[i]
+	// 		j++
+	// 	}
+
+	// 	wireValuesBSize := len(wireValuesB)
+	// 	scalarBytes := wireValuesBSize * fr.Bytes
+	// 	wireValuesBDevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
+	// 	goicicle.CudaMemCpyHtoD[fr.Element](wireValuesBDevicePtr, wireValuesB, scalarBytes)
+	// 	MontConvOnDevice(wireValuesBDevicePtr, wireValuesBSize, false)
+	// 	wireValuesBDevice = OnDeviceData{wireValuesBDevicePtr, wireValuesBSize}
+
+	// 	close(chWireValuesB)
+	// }()
+
 	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
-		for i, j := 0, 0; j < len(wireValuesA); i++ {
-			if pk.InfinityA[i] {
-				continue
-			}
-			wireValuesA[j] = wireValues[i]
-			j++
-		}
-
-		wireValuesASize := len(wireValuesA)
-		scalarBytes := wireValuesASize * fr.Bytes
-		wireValuesADevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesADevicePtr, wireValuesA, scalarBytes)
-		MontConvOnDevice(wireValuesADevicePtr, wireValuesASize, false)
-		wireValuesADevice = OnDeviceData{wireValuesADevicePtr, wireValuesASize}
-
+		wireValuesADevice, wireValuesADeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityA, pk.InfinityA)
 		close(chWireValuesA)
 	}()
+
 	go func() {
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
-		for i, j := 0, 0; j < len(wireValuesB); i++ {
-			if pk.InfinityB[i] {
-				continue
-			}
-			wireValuesB[j] = wireValues[i]
-			j++
-		}
-
-		wireValuesBSize := len(wireValuesB)
-		scalarBytes := wireValuesBSize * fr.Bytes
-		wireValuesBDevicePtr, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](wireValuesBDevicePtr, wireValuesB, scalarBytes)
-		MontConvOnDevice(wireValuesBDevicePtr, wireValuesBSize, false)
-		wireValuesBDevice = OnDeviceData{wireValuesBDevicePtr, wireValuesBSize}
-
+		wireValuesBDevice, wireValuesBDeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
 		close(chWireValuesB)
 	}()
 
@@ -397,4 +408,29 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
 	return h, nil
+}
+
+func PrepareWireValueOnDevice(wireValues []fr.Element, nbInfinityA uint64, infinityA []bool) (data OnDeviceData, err error) {
+	wireValuesA := make([]fr.Element, len(wireValues)-int(nbInfinityA))
+	for i, j := 0, 0; j < len(wireValuesA); i++ {
+		if infinityA[i] {
+			continue
+		}
+		wireValuesA[j] = wireValues[i]
+		j++
+	}
+
+	data.size = len(wireValuesA)
+	scalarBytes := data.size * fr.Bytes
+	if data.p, err = goicicle.CudaMalloc(scalarBytes); err != nil {
+		return
+	}
+	if ret := goicicle.CudaMemCpyHtoD[fr.Element](data.p, wireValuesA, scalarBytes); ret != 0 {
+		err = fmt.Errorf("CudaMemCpyHtoD in PrepareWireValueOnDevice %d", ret)
+		return
+	}
+	if err = MontConvOnDevice(data.p, data.size, false); err != nil {
+		return
+	}
+	return
 }

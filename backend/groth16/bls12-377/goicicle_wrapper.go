@@ -33,18 +33,27 @@ func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, siz
 	return scalarsInterp, timings
 }
 
-func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) []time.Duration {
-	var timings []time.Duration
-	revTime := time.Now()
-	if is_into {
-		icicle.ToMontgomery(scalars_d, size)
-	} else {
-		icicle.FromMontgomery(scalars_d, size)
-	}
-	revTimeElapsed := time.Since(revTime)
-	timings = append(timings, revTimeElapsed)
+// func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) []time.Duration {
+// 	var timings []time.Duration
+// 	revTime := time.Now()
+// 	if is_into {
+// 		icicle.ToMontgomery(scalars_d, size)
+// 	} else {
+// 		icicle.FromMontgomery(scalars_d, size)
+// 	}
+// 	revTimeElapsed := time.Since(revTime)
+// 	timings = append(timings, revTimeElapsed)
 
-	return timings
+// 	return timings
+// }
+
+func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) (err error) {
+	if is_into {
+		_, err = icicle.ToMontgomery(scalars_d, size)
+	} else {
+		_, err = icicle.FromMontgomery(scalars_d, size)
+	}
+	return
 }
 
 func NttOnDevice(scalars_out, scalars_d, twiddles_d, coset_powers_d unsafe.Pointer, size, twid_size, size_bytes int, isCoset bool) []time.Duration {
