@@ -28,7 +28,6 @@ import (
 	"github.com/consensys/gnark/constraint/bls12-377"
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
-	"github.com/ingonyama-zk/iciclegnark/curves/bls12377"
 	"math"
 	"math/big"
 	"math/bits"
@@ -378,7 +377,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 
 	den_d, _ := goicicle.CudaMalloc(sizeBytes)
 	log2Size := int(math.Floor(math.Log2(float64(n))))
-	denIcicle := *bls12377.NewFieldFromFrGnark(denI)
+	denIcicle := *NewFieldFromFrGnark(denI)
 	denIcicleArr := []icicle.G1ScalarField{denIcicle}
 	for i := 0; i < log2Size; i++ {
 		denIcicleArr = append(denIcicleArr, denIcicleArr...)
@@ -397,7 +396,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************     A      ***************************/
 	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
 	a_d, _ := goicicle.CudaMalloc(pointsBytesA)
-	iciclePointsA := bls12377.BatchConvertFromG1Affine(pk.G1.A)
+	iciclePointsA := BatchConvertFromG1Affine(pk.G1.A)
 	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](a_d, iciclePointsA, pointsBytesA)
 
 	pk.G1Device.A = a_d
@@ -405,7 +404,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
 	b_d, _ := goicicle.CudaMalloc(pointsBytesB)
-	iciclePointsB := bls12377.BatchConvertFromG1Affine(pk.G1.B)
+	iciclePointsB := BatchConvertFromG1Affine(pk.G1.B)
 	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](b_d, iciclePointsB, pointsBytesB)
 
 	pk.G1Device.B = b_d
@@ -425,7 +424,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
 
 	k_d, _ := goicicle.CudaMalloc(pointsBytesK)
-	iciclePointsK := bls12377.BatchConvertFromG1Affine(pointsNoInfinity)
+	iciclePointsK := BatchConvertFromG1Affine(pointsNoInfinity)
 	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](k_d, iciclePointsK, pointsBytesK)
 
 	pk.G1Device.K = k_d
@@ -433,7 +432,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************     Z      ***************************/
 	pointsBytesZ := len(pk.G1.Z) * fp.Bytes * 2
 	z_d, _ := goicicle.CudaMalloc(pointsBytesZ)
-	iciclePointsZ := bls12377.BatchConvertFromG1Affine(pk.G1.Z)
+	iciclePointsZ := BatchConvertFromG1Affine(pk.G1.Z)
 	goicicle.CudaMemCpyHtoD[icicle.G1PointAffine](z_d, iciclePointsZ, pointsBytesZ)
 
 	pk.G1Device.Z = z_d
@@ -442,7 +441,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	b2_d, _ := goicicle.CudaMalloc(pointsBytesB2)
-	iciclePointsB2 := bls12377.BatchConvertFromG2Affine(pk.G2.B)
+	iciclePointsB2 := BatchConvertFromG2Affine(pk.G2.B)
 	goicicle.CudaMemCpyHtoD[icicle.G2PointAffine](b2_d, iciclePointsB2, pointsBytesB2)
 	pk.G2Device.B = b2_d
 	/*************************  End G2 Device Setup  ***************************/
