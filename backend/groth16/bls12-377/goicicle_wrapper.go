@@ -2,9 +2,6 @@ package groth16
 
 import (
 	"unsafe"
-
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
-	cudawrapper "github.com/ingonyama-zk/icicle/goicicle"
 	// icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 )
 
@@ -158,10 +155,10 @@ type OnDeviceData struct {
 // 	return nil, out_d, nil, timings
 // }
 
-func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
-	devicePtr, _ := cudawrapper.CudaMalloc(bytes)
-	cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
-	MontConvOnDevice(devicePtr, len(scalars), false)
+// func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
+// 	devicePtr, _ := cudawrapper.CudaMalloc(bytes)
+// 	cudawrapper.CudaMemCpyHtoD[fr.Element](devicePtr, scalars, bytes)
+// 	MontConvOnDevice(devicePtr, len(scalars), false)
 
-	copyDone <- devicePtr
-}
+// 	copyDone <- devicePtr
+// }
