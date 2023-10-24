@@ -101,43 +101,106 @@ func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Dura
 	return
 }
 
-func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G1Jac, unsafe.Pointer, error, time.Duration) {
-	g1ProjPointBytes := fp.Bytes * 3
+// func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G1Jac, unsafe.Pointer, error, time.Duration) {
+// 	g1ProjPointBytes := fp.Bytes * 3
 
-	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
+// 	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
+
+// 	msmTime := time.Now()
+// 	icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
+// 	timings := time.Since(msmTime)
+
+// 	if convert {
+// 		outHost := make([]icicle.G1ProjectivePoint, 1)
+// 		cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
+// 		retPoint := *bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
+// 		cudawrapper.CudaFree(out_d)
+// 		return retPoint, nil, nil, timings
+// 	}
+
+// 	return curve.G1Jac{}, out_d, nil, timings
+// }
+
+func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
+	g1ProjPointBytes := fp.Bytes * 3
+	out_d, err := cudawrapper.CudaMalloc(g1ProjPointBytes)
+	if err != nil {
+		return nil, nil, err, time.Second
+	}
+
+	defer func() {
+		freeRet := cudawrapper.CudaFree(out_d)
+		if freeRet != 0 {
+			fmt.Println("MsmOnDevice free fail with code", freeRet)
+		}
+	}()
 
 	msmTime := time.Now()
-	icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
+	if ret := icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
+		return nil, nil, fmt.Errorf("MsmOnDevice icicle.Commit fail with code %d", ret), time.Second
+	}
 	timings := time.Since(msmTime)
 
 	if convert {
 		outHost := make([]icicle.G1ProjectivePoint, 1)
-		cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
-		retPoint := *bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
-		cudawrapper.CudaFree(out_d)
+		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes); ret != 0 {
+			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
+		}
+		retPoint := bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
 		return retPoint, nil, nil, timings
 	}
 
-	return curve.G1Jac{}, out_d, nil, timings
+	return nil, out_d, nil, timings
 }
 
-func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G2Jac, unsafe.Pointer, error, time.Duration) {
-	g2ProjPointBytes := fp.Bytes * 6 // X,Y,Z each with A0, A1 of fp.Bytes
-	out_d, _ := cudawrapper.CudaMalloc(g2ProjPointBytes)
+// func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G2Jac, unsafe.Pointer, error, time.Duration) {
+// 	g2ProjPointBytes := fp.Bytes * 6 // X,Y,Z each with A0, A1 of fp.Bytes
+// 	out_d, _ := cudawrapper.CudaMalloc(g2ProjPointBytes)
+
+// 	msmTime := time.Now()
+// 	icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor)
+// 	timings := time.Since(msmTime)
+
+// 	if convert {
+// 		outHost := make([]icicle.G2Point, 1)
+// 		cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes)
+// 		retPoint := *bls12377.G2PointToGnarkJac(&outHost[0])
+// 		cudawrapper.CudaFree(out_d)
+// 		return retPoint, nil, nil, timings
+// 	}
+
+// 	return curve.G2Jac{}, out_d, nil, timings
+// }
+
+func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
+	// bw6761, G2 = G1, with X, Y, Z, fp
+	g2ProjPointBytes := fp.Bytes * 3
+	out_d, err := cudawrapper.CudaMalloc(g2ProjPointBytes)
+	if err != nil {
+		return nil, nil, err, time.Second
+	}
+
+	defer func() {
+		if ret := cudawrapper.CudaFree(out_d); ret != 0 {
+			fmt.Println("MsmOnDevice free fail with code", ret)
+		}
+	}()
 
 	msmTime := time.Now()
-	icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor)
+	if ret := icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
+		return nil, nil, fmt.Errorf("MsmG2OnDevice icicle.Commit fail with code %d", ret), time.Second
+	}
 	timings := time.Since(msmTime)
 
 	if convert {
 		outHost := make([]icicle.G2Point, 1)
-		cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes)
-		retPoint := *bls12377.G2PointToGnarkJac(&outHost[0])
-		cudawrapper.CudaFree(out_d)
+		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes); ret != 0 {
+			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
+		}
+		retPoint := bls12377.G2PointToGnarkJac(&outHost[0])
 		return retPoint, nil, nil, timings
 	}
-
-	return curve.G2Jac{}, out_d, nil, timings
+	return nil, out_d, nil, timings
 }
 
 func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
@@ -147,3 +210,77 @@ func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer)
 
 	copyDone <- devicePtr
 }
+
+// func G1ProjectivePointToGnarkJac(p *icicle.G1ProjectivePoint) *curve.G1Jac {
+// 	var p1 curve.G1Jac
+// 	p1.FromAffine(ProjectiveToGnarkAffine(p))
+
+// 	return &p1
+// }
+
+// func ProjectiveToGnarkAffine(p *icicle.G1ProjectivePoint) *curve.G1Affine {
+// 	px := BaseFieldToGnarkFp(&p.X)
+// 	py := BaseFieldToGnarkFp(&p.Y)
+// 	pz := BaseFieldToGnarkFp(&p.Z)
+
+// 	zInv := new(fp.Element)
+// 	x := new(fp.Element)
+// 	y := new(fp.Element)
+
+// 	zInv.Inverse(pz)
+
+// 	x.Mul(px, zInv)
+// 	y.Mul(py, zInv)
+
+// 	return &curve.G1Affine{X: *x, Y: *y}
+// }
+
+// func BaseFieldToGnarkFp(f *icicle.G1BaseField) *fp.Element {
+// 	fb := f.ToBytesLe()
+// 	var b32 [48]byte
+// 	copy(b32[:], fb[:48])
+
+// 	v, e := fp.LittleEndian.Element(&b32)
+
+// 	if e != nil {
+// 		panic(fmt.Sprintf("unable to convert point %v got error %v", f, e))
+// 	}
+
+// 	return &v
+// }
+
+// func ToGnarkE2(f *icicle.G2Element) *fp.Element {
+// 	fb := f.ToBytesLe()
+// 	var b32 [48]byte
+// 	copy(b32[:], fb[:48])
+
+// 	v, e := fp.LittleEndian.Element(&b32)
+
+// 	if e != nil {
+// 		panic(fmt.Sprintf("unable to convert point %v got error %v", f, e))
+// 	}
+
+// 	return &v
+// }
+
+// func G2PointToGnarkJac(p *icicle.G2Point) *curve.G2Jac {
+// 	x := ToGnarkE2(&p.X)
+// 	y := ToGnarkE2(&p.Y)
+// 	z := ToGnarkE2(&p.Z)
+// 	var zSquared fp.Element
+// 	zSquared.Mul(z, z)
+
+// 	var X fp.Element
+// 	X.Mul(x, z)
+
+// 	var Y fp.Element
+// 	Y.Mul(y, &zSquared)
+
+// 	after := curve.G2Jac{
+// 		X: X,
+// 		Y: Y,
+// 		Z: *z,
+// 	}
+
+// 	return &after
+// }
