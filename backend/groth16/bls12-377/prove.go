@@ -106,9 +106,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
+	var h_err error
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		h, h_err = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -267,7 +268,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
-
+	if h_err != nil {
+		return nil, h_err
+	}
 	// schedule our proof part computations
 	startMSM := time.Now()
 	computeBS1()
@@ -312,7 +315,7 @@ func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
 	return r
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *ProvingKey) (unsafe.Pointer, error) {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -387,8 +390,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		goicicle.CudaFree(c_device)
 	}()
 
-	icicle.ReverseScalars(h, n)
+	_, err := icicle.ReverseScalars(h, n)
+	if err != nil {
+		fmt.Println(err)
+	}
 	log.Debug().Dur("took", time.Since(computeHTime)).Msg("Icicle API: computeH")
 
-	return h
+	return h, nil
 }
