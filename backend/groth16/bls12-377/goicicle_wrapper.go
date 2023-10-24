@@ -101,26 +101,6 @@ func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Dura
 	return
 }
 
-func MsmOnDevice2(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G1Jac, unsafe.Pointer, error, time.Duration) {
-	g1ProjPointBytes := fp.Bytes * 3
-
-	out_d, _ := cudawrapper.CudaMalloc(g1ProjPointBytes)
-
-	msmTime := time.Now()
-	icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor)
-	timings := time.Since(msmTime)
-
-	if convert {
-		outHost := make([]icicle.G1ProjectivePoint, 1)
-		cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes)
-		retPoint := *bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
-		cudawrapper.CudaFree(out_d)
-		return retPoint, nil, nil, timings
-	}
-
-	return curve.G1Jac{}, out_d, nil, timings
-}
-
 func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
 	g1ProjPointBytes := fp.Bytes * 3
 	out_d, err := cudawrapper.CudaMalloc(g1ProjPointBytes)
@@ -151,25 +131,6 @@ func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, co
 	}
 
 	return nil, out_d, nil, timings
-}
-
-func MsmG2OnDevice2(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (curve.G2Jac, unsafe.Pointer, error, time.Duration) {
-	g2ProjPointBytes := fp.Bytes * 6 // X,Y,Z each with A0, A1 of fp.Bytes
-	out_d, _ := cudawrapper.CudaMalloc(g2ProjPointBytes)
-
-	msmTime := time.Now()
-	icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor)
-	timings := time.Since(msmTime)
-
-	if convert {
-		outHost := make([]icicle.G2Point, 1)
-		cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes)
-		retPoint := *bls12377.G2PointToGnarkJac(&outHost[0])
-		cudawrapper.CudaFree(out_d)
-		return retPoint, nil, nil, timings
-	}
-
-	return curve.G2Jac{}, out_d, nil, timings
 }
 
 func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
