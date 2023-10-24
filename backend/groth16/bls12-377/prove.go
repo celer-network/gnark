@@ -140,7 +140,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// // computes r[δ], s[δ], kr[δ]
 	// deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	var bs1, ar curve.G1Jac
+	var ar curve.G1Jac
+
+	var bs1 *curve.G1Jac
 
 	// computeBS1 := func() {
 	// 	<-chWireValuesB
@@ -156,7 +158,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		<-chWireValuesB
 
 		var bs1Err error
-		_, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
+		bs1, bs1Err = Bs1MsmOnDevice(wireValuesBDevice.p, pk.G1Device.B, &pk.G1.Beta, &deltas[1], wireValuesBDevice.size)
 		if bs1Err != nil {
 			return bs1Err
 		}
