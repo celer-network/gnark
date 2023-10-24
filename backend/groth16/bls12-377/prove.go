@@ -240,29 +240,29 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}
 
-	computeBS2 := func() error {
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
-
-		<-chWireValuesB
-
-		icicleG2Res, _, _, timing := MsmG2OnDevice2(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
-
-		Bs = icicleG2Res
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, *&s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
-
-		proof.Bs.FromJacobian(&Bs)
-		return nil
-	}
-
 	// computeBS2 := func() error {
+	// 	// Bs2 (1 multi exp G2 - size = len(wires))
+	// 	var Bs, deltaS curve.G2Jac
+
 	// 	<-chWireValuesB
-	// 	return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, s, &proof.Bs)
+
+	// 	icicleG2Res, _, _, timing := MsmG2OnDevice2(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+
+	// 	Bs = icicleG2Res
+	// 	deltaS.FromAffine(&pk.G2.Delta)
+	// 	deltaS.ScalarMultiplication(&deltaS, *&s)
+	// 	Bs.AddAssign(&deltaS)
+	// 	Bs.AddMixed(&pk.G2.Beta)
+
+	// 	proof.Bs.FromJacobian(&Bs)
+	// 	return nil
 	// }
+
+	computeBS2 := func() error {
+		<-chWireValuesB
+		return Bs2MsmOnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, &pk.G2.Delta, &pk.G2.Beta, s, &proof.Bs)
+	}
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
