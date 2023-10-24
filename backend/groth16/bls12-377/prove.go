@@ -282,6 +282,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if h_err != nil {
 		return nil, h_err
 	}
+	if wireValuesADeviceErr != nil {
+		return nil, wireValuesADeviceErr
+	}
+	if wireValuesBDeviceErr != nil {
+		return nil, wireValuesBDeviceErr
+	}
 	// schedule our proof part computations
 	startMSM := time.Now()
 	computeBS1()
