@@ -5,35 +5,38 @@ go 1.19
 require (
 	github.com/bits-and-blooms/bitset v1.7.0
 	github.com/blang/semver/v4 v4.0.0
+	github.com/celer-network/goutils v0.1.60
 	github.com/consensys/bavard v0.1.13
 	github.com/consensys/gnark-crypto v0.12.1
-	github.com/ethereum/go-ethereum v1.13.4
-	github.com/fxamacker/cbor/v2 v2.4.0
+	github.com/ethereum/go-ethereum v1.13.2
+	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230309165930-d61513b1440d
 	github.com/ingonyama-zk/icicle v0.0.0-20230831061944-5667f32bfedd
 	github.com/ingonyama-zk/iciclegnark v0.0.0-20230901124553-e5b9a843dede
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.29.0
-	github.com/stretchr/testify v1.8.4
-	golang.org/x/crypto v0.14.0
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
+	github.com/stretchr/testify v1.8.3
+	golang.org/x/crypto v0.12.0
+	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/holiman/uint256 v1.2.3 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.17 // indirect
+	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
 replace github.com/consensys/gnark-crypto => github.com/celer-network/gnark-crypto v0.0.0-20230423085214-c00cabca6125
+
+replace github.com/ingonyama-zk/icicle => github.com/celer-network/icicle v0.0.0-20231018015125-89a5081881af
 
 //replace github.com/consensys/gnark-crypto => github.com/bytetang/gnark-crypto v0.0.0-20230530142037-050894b6b603
