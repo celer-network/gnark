@@ -172,23 +172,31 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}()
 
 	// sample random r and s
-	var r, s big.Int
-	var _r, _s, _kr fr.Element
-	if _, err := _r.SetRandom(); err != nil {
+	// var r, s big.Int
+	// var _r, _s, _kr fr.Element
+	// if _, err := _r.SetRandom(); err != nil {
+	// 	return nil, err
+	// }
+	// if _, err := _s.SetRandom(); err != nil {
+	// 	return nil, err
+	// }
+	// _kr.Mul(&_r, &_s).Neg(&_kr)
+
+	// _r.BigInt(&r)
+	// _s.BigInt(&s)
+
+	// // computes r[δ], s[δ], kr[δ]
+	// deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+
+	// deltas, r, s, err := CalDeltas(&pk.G1.Delta)
+	deltas, _, _, err := CalDeltas(&pk.G1.Delta)
+
+	if err != nil {
 		return nil, err
 	}
-	if _, err := _s.SetRandom(); err != nil {
-		return nil, err
-	}
-	_kr.Mul(&_r, &_s).Neg(&_kr)
 
-	_r.BigInt(&r)
-	_s.BigInt(&s)
-
-	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
-
-	var bs1, ar curve.G1Jac
+	// var bs1, ar curve.G1Jac
+	var bs1 curve.G1Jac
 
 	computeBS1 := func() {
 		<-chWireValuesB
@@ -201,81 +209,81 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		bs1.AddMixed(&deltas[1])
 	}
 
-	computeAR1 := func() {
-		<-chWireValuesA
+	// computeAR1 := func() {
+	// 	<-chWireValuesA
 
-		icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+	// 	icicleRes, _, _, timing := MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
 
-		ar = icicleRes
-		ar.AddMixed(&pk.G1.Alpha)
-		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(&ar)
-	}
+	// 	ar = icicleRes
+	// 	ar.AddMixed(&pk.G1.Alpha)
+	// 	ar.AddMixed(&deltas[0])
+	// 	proof.Ar.FromJacobian(&ar)
+	// }
 
-	computeKRS := func() {
-		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-		// however, having similar lengths for our tasks helps with parallelism
+	// computeKRS := func() {
+	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// 	// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 curve.G1Jac
-		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
-		icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
+	// 	icicleRes, _, _, timing := MsmOnDevice(h, pk.G1Device.Z, sizeH, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS2 MSM")
 
-		krs2 = icicleRes
-		// filter the wire values if needed;
-		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+	// 	krs2 = icicleRes
+	// 	// filter the wire values if needed;
+	// 	_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
 
-		scals := _wireValues[r1cs.GetNbPublicVariables():]
+	// 	scals := _wireValues[r1cs.GetNbPublicVariables():]
 
-		// Filter scalars matching infinity point indices
-		for _, indexToRemove := range pk.G1InfPointIndices.K {
-			scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
-		}
+	// 	// Filter scalars matching infinity point indices
+	// 	for _, indexToRemove := range pk.G1InfPointIndices.K {
+	// 		scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+	// 	}
 
-		scalarBytes := len(scals) * fr.Bytes
-		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
-		MontConvOnDevice(scalars_d, len(scals), false)
+	// 	scalarBytes := len(scals) * fr.Bytes
+	// 	scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+	// 	goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scals, scalarBytes)
+	// 	MontConvOnDevice(scalars_d, len(scals), false)
 
-		icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
+	// 	icicleRes, _, _, timing = MsmOnDevice(scalars_d, pk.G1Device.K, len(scals), BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM KRS MSM")
 
-		goicicle.CudaFree(scalars_d)
+	// 	goicicle.CudaFree(scalars_d)
 
-		krs = icicleRes
-		krs.AddMixed(&deltas[2])
+	// 	krs = icicleRes
+	// 	krs.AddMixed(&deltas[2])
 
-		krs.AddAssign(&krs2)
+	// 	krs.AddAssign(&krs2)
 
-		p1.ScalarMultiplication(&ar, &s)
-		krs.AddAssign(&p1)
+	// 	p1.ScalarMultiplication(&ar, &s)
+	// 	krs.AddAssign(&p1)
 
-		p1.ScalarMultiplication(&bs1, &r)
-		krs.AddAssign(&p1)
+	// 	p1.ScalarMultiplication(&bs1, &r)
+	// 	krs.AddAssign(&p1)
 
-		proof.Krs.FromJacobian(&krs)
-	}
+	// 	proof.Krs.FromJacobian(&krs)
+	// }
 
-	computeBS2 := func() error {
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
+	// computeBS2 := func() error {
+	// 	// Bs2 (1 multi exp G2 - size = len(wires))
+	// 	var Bs, deltaS curve.G2Jac
 
-		<-chWireValuesB
+	// 	<-chWireValuesB
 
-		icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
+	// 	icicleG2Res, _, _, timing := MsmG2OnDevice(wireValuesBDevice.p, pk.G2Device.B, wireValuesBDevice.size, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM G2 BS")
 
-		Bs = icicleG2Res
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
+	// 	Bs = icicleG2Res
+	// 	deltaS.FromAffine(&pk.G2.Delta)
+	// 	deltaS.ScalarMultiplication(&deltaS, &s)
+	// 	Bs.AddAssign(&deltaS)
+	// 	Bs.AddMixed(&pk.G2.Beta)
 
-		proof.Bs.FromJacobian(&Bs)
-		return nil
-	}
+	// 	proof.Bs.FromJacobian(&Bs)
+	// 	return nil
+	// }
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
@@ -291,11 +299,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// schedule our proof part computations
 	startMSM := time.Now()
 	computeBS1()
-	computeAR1()
-	computeKRS()
-	if err := computeBS2(); err != nil {
-		return nil, err
-	}
+	// computeAR1()
+	// computeKRS()
+	// if err := computeBS2(); err != nil {
+	// 	return nil, err
+	// }
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
@@ -439,4 +447,24 @@ func PrepareWireValueOnDevice(wireValues []fr.Element, nbInfinityA uint64, infin
 		return
 	}
 	return
+}
+
+func CalDeltas(pkDelta *curve.G1Affine) ([]curve.G1Affine, *big.Int, *big.Int, error) {
+	// sample random r and s
+	r := new(big.Int)
+	s := new(big.Int)
+	var _r, _s, _kr fr.Element
+	if _, err := _r.SetRandom(); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err := _s.SetRandom(); err != nil {
+		return nil, nil, nil, err
+	}
+	_kr.Mul(&_r, &_s).Neg(&_kr)
+	_r.BigInt(r)
+	_s.BigInt(s)
+
+	// computes r[δ], s[δ], kr[δ]
+	deltas := curve.BatchScalarMultiplicationG1(pkDelta, []fr.Element{_r, _s, _kr})
+	return deltas, r, s, nil
 }
