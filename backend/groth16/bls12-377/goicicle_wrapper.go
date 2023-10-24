@@ -5,12 +5,9 @@ import (
 	"time"
 	"unsafe"
 
-	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	cudawrapper "github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
-	"github.com/ingonyama-zk/iciclegnark/curves/bls12377"
 )
 
 type OnDeviceData struct {
@@ -101,67 +98,67 @@ func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Dura
 	return
 }
 
-func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
-	g1ProjPointBytes := fp.Bytes * 3
-	out_d, err := cudawrapper.CudaMalloc(g1ProjPointBytes)
-	if err != nil {
-		return nil, nil, err, time.Second
-	}
+// func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
+// 	g1ProjPointBytes := fp.Bytes * 3
+// 	out_d, err := cudawrapper.CudaMalloc(g1ProjPointBytes)
+// 	if err != nil {
+// 		return nil, nil, err, time.Second
+// 	}
 
-	defer func() {
-		freeRet := cudawrapper.CudaFree(out_d)
-		if freeRet != 0 {
-			fmt.Println("MsmOnDevice free fail with code", freeRet)
-		}
-	}()
+// 	defer func() {
+// 		freeRet := cudawrapper.CudaFree(out_d)
+// 		if freeRet != 0 {
+// 			fmt.Println("MsmOnDevice free fail with code", freeRet)
+// 		}
+// 	}()
 
-	msmTime := time.Now()
-	if ret := icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
-		return nil, nil, fmt.Errorf("MsmOnDevice icicle.Commit fail with code %d", ret), time.Second
-	}
-	timings := time.Since(msmTime)
+// 	msmTime := time.Now()
+// 	if ret := icicle.Commit(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
+// 		return nil, nil, fmt.Errorf("MsmOnDevice icicle.Commit fail with code %d", ret), time.Second
+// 	}
+// 	timings := time.Since(msmTime)
 
-	if convert {
-		outHost := make([]icicle.G1ProjectivePoint, 1)
-		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes); ret != 0 {
-			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
-		}
-		retPoint := bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
-		return retPoint, nil, nil, timings
-	}
+// 	if convert {
+// 		outHost := make([]icicle.G1ProjectivePoint, 1)
+// 		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G1ProjectivePoint](outHost, out_d, g1ProjPointBytes); ret != 0 {
+// 			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
+// 		}
+// 		retPoint := bls12377.G1ProjectivePointToGnarkJac(&outHost[0])
+// 		return retPoint, nil, nil, timings
+// 	}
 
-	return nil, out_d, nil, timings
-}
+// 	return nil, out_d, nil, timings
+// }
 
-func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
-	g2ProjPointBytes := fp.Bytes * 6
-	out_d, err := cudawrapper.CudaMalloc(g2ProjPointBytes)
-	if err != nil {
-		return nil, nil, err, time.Second
-	}
+// func MsmG2OnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G2Jac, unsafe.Pointer, error, time.Duration) {
+// 	g2ProjPointBytes := fp.Bytes * 6
+// 	out_d, err := cudawrapper.CudaMalloc(g2ProjPointBytes)
+// 	if err != nil {
+// 		return nil, nil, err, time.Second
+// 	}
 
-	defer func() {
-		if ret := cudawrapper.CudaFree(out_d); ret != 0 {
-			fmt.Println("MsmOnDevice free fail with code", ret)
-		}
-	}()
+// 	defer func() {
+// 		if ret := cudawrapper.CudaFree(out_d); ret != 0 {
+// 			fmt.Println("MsmOnDevice free fail with code", ret)
+// 		}
+// 	}()
 
-	msmTime := time.Now()
-	if ret := icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
-		return nil, nil, fmt.Errorf("MsmG2OnDevice icicle.Commit fail with code %d", ret), time.Second
-	}
-	timings := time.Since(msmTime)
+// 	msmTime := time.Now()
+// 	if ret := icicle.CommitG2(out_d, scalars_d, points_d, count, bucketFactor); ret != 0 {
+// 		return nil, nil, fmt.Errorf("MsmG2OnDevice icicle.Commit fail with code %d", ret), time.Second
+// 	}
+// 	timings := time.Since(msmTime)
 
-	if convert {
-		outHost := make([]icicle.G2Point, 1)
-		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes); ret != 0 {
-			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
-		}
-		retPoint := bls12377.G2PointToGnarkJac(&outHost[0])
-		return retPoint, nil, nil, timings
-	}
-	return nil, out_d, nil, timings
-}
+// 	if convert {
+// 		outHost := make([]icicle.G2Point, 1)
+// 		if ret := cudawrapper.CudaMemCpyDtoH[icicle.G2Point](outHost, out_d, g2ProjPointBytes); ret != 0 {
+// 			return nil, nil, fmt.Errorf("MsmOnDevice cpyHRet fail with code %d", ret), time.Second
+// 		}
+// 		retPoint := bls12377.G2PointToGnarkJac(&outHost[0])
+// 		return retPoint, nil, nil, timings
+// 	}
+// 	return nil, out_d, nil, timings
+// }
 
 func CopyToDevice(scalars []fr.Element, bytes int, copyDone chan unsafe.Pointer) {
 	devicePtr, _ := cudawrapper.CudaMalloc(bytes)
