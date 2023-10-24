@@ -1,13 +1,11 @@
 package groth16
 
 import (
-	"fmt"
-	"time"
 	"unsafe"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	cudawrapper "github.com/ingonyama-zk/icicle/goicicle"
-	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
+	// icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 )
 
 type OnDeviceData struct {
@@ -15,20 +13,20 @@ type OnDeviceData struct {
 	size int
 }
 
-func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, sizeBytes int, isCoset bool) (unsafe.Pointer, []time.Duration) {
-	var timings []time.Duration
-	revTime := time.Now()
-	icicle.ReverseScalars(scalars_d, size)
-	revTimeElapsed := time.Since(revTime)
-	timings = append(timings, revTimeElapsed)
+// func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, sizeBytes int, isCoset bool) (unsafe.Pointer, []time.Duration) {
+// 	var timings []time.Duration
+// 	revTime := time.Now()
+// 	icicle.ReverseScalars(scalars_d, size)
+// 	revTimeElapsed := time.Since(revTime)
+// 	timings = append(timings, revTimeElapsed)
 
-	interpTime := time.Now()
-	scalarsInterp := icicle.Interpolate(scalars_d, twiddles_d, cosetPowers_d, size, isCoset)
-	interpTimeElapsed := time.Since(interpTime)
-	timings = append(timings, interpTimeElapsed)
+// 	interpTime := time.Now()
+// 	scalarsInterp := icicle.Interpolate(scalars_d, twiddles_d, cosetPowers_d, size, isCoset)
+// 	interpTimeElapsed := time.Since(interpTime)
+// 	timings = append(timings, interpTimeElapsed)
 
-	return scalarsInterp, timings
-}
+// 	return scalarsInterp, timings
+// }
 
 // func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) []time.Duration {
 // 	var timings []time.Duration
@@ -44,59 +42,59 @@ func INttOnDevice(scalars_d, twiddles_d, cosetPowers_d unsafe.Pointer, size, siz
 // 	return timings
 // }
 
-func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) (err error) {
-	if is_into {
-		_, err = icicle.ToMontgomery(scalars_d, size)
-	} else {
-		_, err = icicle.FromMontgomery(scalars_d, size)
-	}
-	return
-}
+// func MontConvOnDevice(scalars_d unsafe.Pointer, size int, is_into bool) (err error) {
+// 	if is_into {
+// 		_, err = icicle.ToMontgomery(scalars_d, size)
+// 	} else {
+// 		_, err = icicle.FromMontgomery(scalars_d, size)
+// 	}
+// 	return
+// }
 
-func NttOnDevice(scalars_out, scalars_d, twiddles_d, coset_powers_d unsafe.Pointer, size, twid_size, size_bytes int, isCoset bool) []time.Duration {
-	var timings []time.Duration
-	evalTime := time.Now()
-	res := icicle.Evaluate(scalars_out, scalars_d, twiddles_d, coset_powers_d, size, twid_size, isCoset)
-	evalTimeElapsed := time.Since(evalTime)
-	timings = append(timings, evalTimeElapsed)
+// func NttOnDevice(scalars_out, scalars_d, twiddles_d, coset_powers_d unsafe.Pointer, size, twid_size, size_bytes int, isCoset bool) []time.Duration {
+// 	var timings []time.Duration
+// 	evalTime := time.Now()
+// 	res := icicle.Evaluate(scalars_out, scalars_d, twiddles_d, coset_powers_d, size, twid_size, isCoset)
+// 	evalTimeElapsed := time.Since(evalTime)
+// 	timings = append(timings, evalTimeElapsed)
 
-	if res != 0 {
-		fmt.Print("Issue evaluating")
-	}
+// 	if res != 0 {
+// 		fmt.Print("Issue evaluating")
+// 	}
 
-	revTime := time.Now()
-	icicle.ReverseScalars(scalars_out, size)
-	revTimeElapsed := time.Since(revTime)
-	timings = append(timings, revTimeElapsed)
+// 	revTime := time.Now()
+// 	icicle.ReverseScalars(scalars_out, size)
+// 	revTimeElapsed := time.Since(revTime)
+// 	timings = append(timings, revTimeElapsed)
 
-	return timings
-}
+// 	return timings
+// }
 
-func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Duration) {
-	convSTime := time.Now()
-	ret := icicle.VecScalarMulMod(a_d, b_d, size)
-	timings = append(timings, time.Since(convSTime))
+// func PolyOps(a_d, b_d, c_d, den_d unsafe.Pointer, size int) (timings []time.Duration) {
+// 	convSTime := time.Now()
+// 	ret := icicle.VecScalarMulMod(a_d, b_d, size)
+// 	timings = append(timings, time.Since(convSTime))
 
-	if ret != 0 {
-		fmt.Print("Vector mult a*b issue")
-	}
-	convSTime = time.Now()
-	ret = icicle.VecScalarSub(a_d, c_d, size)
-	timings = append(timings, time.Since(convSTime))
+// 	if ret != 0 {
+// 		fmt.Print("Vector mult a*b issue")
+// 	}
+// 	convSTime = time.Now()
+// 	ret = icicle.VecScalarSub(a_d, c_d, size)
+// 	timings = append(timings, time.Since(convSTime))
 
-	if ret != 0 {
-		fmt.Print("Vector sub issue")
-	}
-	convSTime = time.Now()
-	ret = icicle.VecScalarMulMod(a_d, den_d, size)
-	timings = append(timings, time.Since(convSTime))
+// 	if ret != 0 {
+// 		fmt.Print("Vector sub issue")
+// 	}
+// 	convSTime = time.Now()
+// 	ret = icicle.VecScalarMulMod(a_d, den_d, size)
+// 	timings = append(timings, time.Since(convSTime))
 
-	if ret != 0 {
-		fmt.Print("Vector mult a*den issue")
-	}
+// 	if ret != 0 {
+// 		fmt.Print("Vector mult a*den issue")
+// 	}
 
-	return
-}
+// 	return
+// }
 
 // func MsmOnDevice(scalars_d, points_d unsafe.Pointer, count, bucketFactor int, convert bool) (*curve.G1Jac, unsafe.Pointer, error, time.Duration) {
 // 	g1ProjPointBytes := fp.Bytes * 3
