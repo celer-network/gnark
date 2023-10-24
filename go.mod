@@ -5,7 +5,6 @@ go 1.19
 require (
 	github.com/bits-and-blooms/bitset v1.5.0
 	github.com/blang/semver/v4 v4.0.0
-		github.com/celer-network/goutils v0.1.60
 	github.com/consensys/bavard v0.1.13
 	github.com/consensys/gnark-crypto v0.12.1
 	github.com/ethereum/go-ethereum v1.13.2
