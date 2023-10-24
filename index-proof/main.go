@@ -67,11 +67,7 @@ func main() {
 		RlpString: witnessInput,
 	}
 
-<<<<<<< HEAD
-	witness, _ := frontend.NewWitness(&assignment, ecc.BLS12_377.ScalarField())
-=======
 	witness, _ := frontend.NewWitness(&assignment, ecc.BW6_761.ScalarField())
->>>>>>> cpu-gpu-test3
 	publicWitness, _ := witness.Public()
 
 	// groth16: Prove & Verify
