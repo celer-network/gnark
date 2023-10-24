@@ -140,9 +140,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// // computes r[δ], s[δ], kr[δ]
 	// deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	var ar curve.G1Jac
-
-	var bs1 *curve.G1Jac
+	var ar, bs1 *curve.G1Jac
 
 	// computeBS1 := func() {
 	// 	<-chWireValuesB
@@ -165,26 +163,26 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}
 
-	computeAR1 := func() {
-		<-chWireValuesA
-
-		icicleRes, _, _, timing := MsmOnDevice2(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
-		log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
-
-		ar = icicleRes
-		ar.AddMixed(&pk.G1.Alpha)
-		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(&ar)
-	}
-	// computeAR1 := func() error {
+	// computeAR1 := func() {
 	// 	<-chWireValuesA
-	// 	var arErr error
-	// 	ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
-	// 	if arErr != nil {
-	// 		return arErr
-	// 	}
-	// 	return nil
+
+	// 	icicleRes, _, _, timing := MsmOnDevice2(wireValuesADevice.p, pk.G1Device.A, wireValuesADevice.size, BUCKET_FACTOR, true)
+	// 	log.Debug().Dur("took", timing).Msg("Icicle API: MSM AR1 MSM")
+
+	// 	ar = icicleRes
+	// 	ar.AddMixed(&pk.G1.Alpha)
+	// 	ar.AddMixed(&deltas[0])
+	// 	proof.Ar.FromJacobian(&ar)
 	// }
+	computeAR1 := func() error {
+		<-chWireValuesA
+		var arErr error
+		ar, arErr = Ar1MsmOnDevice(wireValuesADevice.p, pk.G1Device.A, &pk.G1.Alpha, &deltas[0], wireValuesADevice.size, &proof.Ar)
+		if arErr != nil {
+			return arErr
+		}
+		return nil
+	}
 
 	computeKRS := func() {
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
@@ -222,7 +220,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		krs.AddAssign(&krs2)
 
-		p1.ScalarMultiplication(&ar, *&s)
+		p1.ScalarMultiplication(*&ar, *&s)
 		krs.AddAssign(&p1)
 
 		p1.ScalarMultiplication(*&bs1, *&r)
