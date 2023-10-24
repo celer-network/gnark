@@ -225,7 +225,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		p1.ScalarMultiplication(&ar, *&s)
 		krs.AddAssign(&p1)
 
-		p1.ScalarMultiplication(&bs1, *&r)
+		p1.ScalarMultiplication(*&bs1, *&r)
 		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
