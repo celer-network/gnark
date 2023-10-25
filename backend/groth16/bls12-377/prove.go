@@ -29,8 +29,13 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"math/big"
+	"sync"
 	"time"
 	"unsafe"
+)
+
+var (
+	gpu377Lock sync.Mutex
 )
 
 // Proof represents a Groth16 proof that was encoded with a ProvingKey and can be verified
@@ -102,8 +107,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
 
+	gpu377Lock.Lock()
+	defer gpu377Lock.Unlock()
 	start := time.Now()
-
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
@@ -280,6 +286,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
 
+	// TODO, do not use gorutin?
 	go func() {
 		goicicle.CudaFree(wireValuesADevice.p)
 		goicicle.CudaFree(wireValuesBDevice.p)
