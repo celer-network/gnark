@@ -448,7 +448,10 @@ func (pk *ProvingKey) setupDevicePointers() {
 	pk.G2Device.B = b2_d
 	/*************************  End G2 Device Setup  ***************************/
 
-	pk.G1.A = nil;
+	pk.G1.A = nil
+	pk.G1.B = nil
+	pk.G1.K = nil
+	pk.G1.Z = nil
 
 }
 
