@@ -402,6 +402,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 
 	pk.G1Device.A = a_d
 
+	pk.G1.A = []curve.G1Affine{}
+	
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
 	b_d, _ := goicicle.CudaMalloc(pointsBytesB)
