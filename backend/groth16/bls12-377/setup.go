@@ -18,6 +18,12 @@ package groth16
 
 import (
 	"fmt"
+	"log"
+	"math"
+	"math/big"
+	"math/bits"
+	"unsafe"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
@@ -29,10 +35,6 @@ import (
 	"github.com/ingonyama-zk/icicle/goicicle"
 	icicle "github.com/ingonyama-zk/icicle/goicicle/curves/bls12377"
 	"github.com/ingonyama-zk/iciclegnark/curves/bls12377"
-	"math"
-	"math/big"
-	"math/bits"
-	"unsafe"
 )
 
 // ProvingKey is used by a Groth16 prover to encode a proof of a statement
@@ -403,7 +405,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 	pk.G1Device.A = a_d
 
 	pk.G1.A = []curve.G1Affine{}
-	
+	log.Println("set A nil")
+
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
 	b_d, _ := goicicle.CudaMalloc(pointsBytesB)
