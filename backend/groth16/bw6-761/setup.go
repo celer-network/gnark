@@ -453,6 +453,8 @@ func (pk *ProvingKey) setupDevicePointers() {
 	pk.G1.K = nil
 	pk.G1.Z = nil
 
+	pk.G2.B = nil
+
 }
 
 // Precompute sets e, -[δ]2, -[γ]2
