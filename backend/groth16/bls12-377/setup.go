@@ -404,7 +404,7 @@ func (pk *ProvingKey) setupDevicePointers() {
 
 	pk.G1Device.A = a_d
 
-	pk.G1.A = []curve.G1Affine{}
+	pk.G1.A = nil
 	log.Println("set A nil")
 
 	/*************************     B      ***************************/
