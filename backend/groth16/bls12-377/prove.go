@@ -85,6 +85,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
+	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
+	if err != nil {
+		return nil, err
+	}
+
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
 
@@ -117,11 +122,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		wireValuesBDevice, wireValuesBDeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
 		close(chWireValuesB)
 	}()
-
-	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
-	if err != nil {
-		return nil, err
-	}
 
 	var ar, bs1 *curve.G1Jac
 
@@ -178,13 +178,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// schedule our proof part computations
 
 	startMSM := time.Now()
+	if err = computeKRS(); err != nil {
+		return nil, err
+	}
+	wireValues = nil
+
 	if err = computeBS1(); err != nil {
 		return nil, err
 	}
 	if err = computeAR1(); err != nil {
-		return nil, err
-	}
-	if err = computeKRS(); err != nil {
 		return nil, err
 	}
 	if err = computeBS2(); err != nil {
