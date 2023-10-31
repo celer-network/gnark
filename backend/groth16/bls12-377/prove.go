@@ -88,6 +88,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
 
+	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
+	if err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 
 	// H (witness reduction / FFT part)
@@ -117,11 +122,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		wireValuesBDevice, wireValuesBDeviceErr = PrepareWireValueOnDevice(wireValues, pk.NbInfinityB, pk.InfinityB)
 		close(chWireValuesB)
 	}()
-
-	deltas, r, s, err := CalDeltas(&pk.G1.Delta)
-	if err != nil {
-		return nil, err
-	}
 
 	var ar, bs1 *curve.G1Jac
 
