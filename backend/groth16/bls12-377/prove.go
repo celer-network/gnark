@@ -190,6 +190,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if err = computeBS2(); err != nil {
 		return nil, err
 	}
+
+	wireValues = nil
+
 	log.Debug().Dur("took", time.Since(startMSM)).Msg("Total MSM time")
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done; TOTAL PROVE TIME")
