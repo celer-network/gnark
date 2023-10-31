@@ -181,7 +181,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if err = computeKRS(); err != nil {
 		return nil, err
 	}
-	wireValues = nil
+	// wireValues = nil
 
 	if err = computeBS1(); err != nil {
 		return nil, err
