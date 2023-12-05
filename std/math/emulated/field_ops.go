@@ -3,6 +3,7 @@ package emulated
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/consensys/gnark/frontend"
 )
@@ -144,6 +145,56 @@ func (f *Field[T]) Reduce(a *Element[T]) *Element[T] {
 	}
 	// slow path - use hint to reduce value
 	return f.mulMod(a, f.One(), 0)
+}
+
+// Reduce reduces a modulo the field order and returns it. Uses hint [RemHint].
+func (f *Field[T]) ReduceWithoutConstantCheck(a *Element[T]) *Element[T] {
+	f.enforceWidthConditional(a)
+	if a.overflow == 0 {
+		// fast path - already reduced, omit reduction.
+		return a
+	}
+
+	// slow path - use hint to reduce value
+	e, err := f.computeRemHint(a, f.Modulus())
+	if err != nil {
+		panic(fmt.Sprintf("reduction hint: %v", err))
+	}
+	f.AssertIsEqual(e, a)
+	return e
+}
+
+// computeRemHint packs inputs for the RemHint hint function.
+// sets z to the remainder x%y for y != 0 and returns z.
+func (f *Field[T]) computeRemHint(x, y *Element[T]) (z *Element[T], err error) {
+	var fp T
+	hintInputs := []frontend.Variable{
+		fp.BitsPerLimb(),
+		len(x.Limbs),
+	}
+	hintInputs = append(hintInputs, x.Limbs...)
+	hintInputs = append(hintInputs, y.Limbs...)
+	limbs, err := f.api.NewHint(RemHint, int(len(y.Limbs)), hintInputs...)
+	if err != nil {
+		return nil, err
+	}
+	return f.packLimbs(limbs, true), nil
+}
+
+// RemHint sets z to the remainder x%y for y != 0 and returns z.
+// If y == 0, returns an error.
+// Rem implements truncated modulus (like Go); see QuoRem for more details.
+func RemHint(_ *big.Int, inputs []*big.Int, outputs []*big.Int) error {
+	nbBits, _, x, y, err := parseHintDivInputs(inputs)
+	if err != nil {
+		return err
+	}
+	r := new(big.Int)
+	r.Rem(x, y)
+	if err := decompose(r, nbBits, outputs); err != nil {
+		return fmt.Errorf("decompose remainder: %w", err)
+	}
+	return nil
 }
 
 // Sub subtracts b from a and returns it. Reduces locally if wouldn't fit into
