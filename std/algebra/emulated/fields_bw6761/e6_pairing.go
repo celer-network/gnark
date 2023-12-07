@@ -1,157 +1,265 @@
-/*
- *
- * Copyright © 2020 ConsenSys
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * /
- */
-
 package fields_bw6761
 
-func (e Ext6) nSquare(z *E6, n int) *E6 {
+import (
+	"math/big"
+
+	"github.com/consensys/gnark/std/math/emulated"
+)
+
+func (e Ext6) nSquareKarabina2345(z *E6, n int) *E6 {
 	for i := 0; i < n; i++ {
-		z = e.CyclotomicSquare(z)
+		z = e.CyclotomicSquareKarabina2345(z)
 	}
 	return z
 }
 
-func (e Ext6) nSquareCompressed(z *E6, n int) *E6 {
+func (e Ext6) nSquareKarabina12345(z *E6, n int) *E6 {
 	for i := 0; i < n; i++ {
-		z = e.CyclotomicSquareCompressed(z)
+		z = e.CyclotomicSquareKarabina12345(z)
 	}
 	return z
 }
 
-// Expt set z to x^t in *E6 and return z
-func (e Ext6) Expt(x *E6) *E6 {
-	x = e.Reduce(x)
-
-	// const tAbsVal uint64 = 9586122913090633729
-	// tAbsVal in binary: 1000010100001000110000000000000000000000000000000000000000000001
-	// drop the low 46 bits (all 0 except the least significant bit): 100001010000100011 = 136227
-	// Shortest addition chains can be found at https://wwwhomes.uni-bielefeld.de/achim/addition_chain.html
-
-	// a shortest addition chain for 136227
-	result := e.Set(x)
-	result = e.nSquare(result, 5)
-	result = e.Mul(result, x)
-	x33 := e.Set(result)
-	result = e.nSquare(result, 7)
-	result = e.Mul(result, x33)
-	result = e.nSquare(result, 4)
-	result = e.Mul(result, x)
+// ExpX0Minus1 set z to z^{x₀-1} in E6 and return z
+// x₀-1 = 9586122913090633728
+func (e Ext6) ExpX0Minus1(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.Copy(z)
+	result = e.nSquareKarabina12345(result, 5)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z)
+	z33 := e.Copy(result)
+	result = e.nSquareKarabina12345(result, 7)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z33)
+	result = e.nSquareKarabina12345(result, 4)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z)
 	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
+	result = e.Mul(result, z)
+	result = e.nSquareKarabina2345(result, 46)
+	result = e.DecompressKarabina2345(result)
 
-	// the remaining 46 bits
-	result = e.nSquareCompressed(result, 46)
-	result = e.DecompressKarabina(result)
-	result = e.Mul(result, x)
-
-	return e.Set(result)
+	return result
 }
 
-// Expc2 set z to x^c2 in *E6 and return z
+// ExpX0Minus1Square set z to z^{(x₀-1)²} in E6 and return z
+// (x₀-1)² = 91893752504881257682351033800651177984
+func (e Ext6) ExpX0Minus1Square(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.Copy(z)
+	result = e.nSquareKarabina12345(result, 3)
+	result = e.DecompressKarabina12345(result)
+	t0 := e.CyclotomicSquare(result)
+	t2 := e.Mul(z, t0)
+	result = e.Mul(result, t2)
+	t0 = e.Mul(z, result)
+	t1 := e.CyclotomicSquare(t0)
+	t1 = e.Mul(t2, t1)
+	t3 := e.nSquareKarabina12345(t1, 7)
+	t3 = e.DecompressKarabina12345(t3)
+	t2 = e.Mul(t2, t3)
+	t2 = e.nSquareKarabina12345(t2, 11)
+	t2 = e.DecompressKarabina12345(t2)
+	t1 = e.Mul(t1, t2)
+	t0 = e.Mul(t0, t1)
+	t0 = e.nSquareKarabina12345(t0, 7)
+	t0 = e.DecompressKarabina12345(t0)
+	result = e.Mul(result, t0)
+	result = e.nSquareKarabina12345(result, 3)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(z, result)
+	result = e.nSquareKarabina2345(result, 92)
+	result = e.DecompressKarabina2345(result)
+
+	return result
+
+}
+
+// ExpX0Plus1 set z to z^(x₀+1) in E6 and return z
+// x₀+1 = 9586122913090633730
+func (e Ext6) ExpX0Plus1(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.Copy(z)
+	t := e.CyclotomicSquare(result)
+	result = e.nSquareKarabina12345(t, 4)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z)
+	z33 := e.Copy(result)
+	result = e.nSquareKarabina12345(result, 7)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z33)
+	result = e.nSquareKarabina12345(result, 4)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
+	result = e.nSquareKarabina2345(result, 46)
+	result = e.DecompressKarabina2345(result)
+	result = e.Mul(result, t)
+
+	return result
+}
+
+// ExpX0Minus1Div3 set z to z^(x₀-1)/3 in E6 and return z
+// (x₀-1)/3 = 3195374304363544576
+func (e Ext6) ExptMinus1Div3(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.Copy(z)
+	result = e.CyclotomicSquare(result)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
+	t0 := e.nSquareKarabina12345(result, 7)
+	t0 = e.DecompressKarabina2345(t0)
+	result = e.Mul(result, t0)
+	result = e.nSquareKarabina12345(result, 5)
+	result = e.DecompressKarabina12345(result)
+	result = e.Mul(result, z)
+	result = e.nSquareKarabina2345(result, 46)
+	result = e.DecompressKarabina2345(result)
+
+	return result
+}
+
+// ExpC1 set z to z^C1 in E6 and return z
 // ht, hy = 13, 9
-// c1 = ht+hy = 22 (10110)
-func (e Ext6) Expc2(x *E6) *E6 {
+// C1 = (ht+hy)/2 = 11
+func (e Ext6) ExpC1(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.Copy(z)
+	result = e.CyclotomicSquare(result)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
 
-	result := e.CyclotomicSquare(x)
-	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-
-	return e.Set(result)
+	return result
 }
 
-// Expc1 set z to x^c1 in *E6 and return z
+// ExpC2 set z to z^C2 in E6 and return z
 // ht, hy = 13, 9
-// c1 = ht**2+3*hy**2 = 412 (110011100)
-func (e Ext6) Expc1(x *E6) *E6 {
-	x = e.Reduce(x)
+// C2 = (ht**2+3*hy**2)/4 = 103
+func (e Ext6) ExpC2(z *E6) *E6 {
+	z = e.Reduce(z)
+	result := e.CyclotomicSquare(z)
+	result = e.Mul(result, z)
+	t0 := e.nSquareKarabina12345(result, 4)
+	t0 = e.DecompressKarabina12345(t0)
+	result = e.Mul(result, t0)
+	result = e.CyclotomicSquare(result)
+	result = e.Mul(result, z)
 
-	result := e.CyclotomicSquare(x)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-	result = e.CyclotomicSquare(result)
-	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-	result = e.Mul(result, x)
-	result = e.CyclotomicSquare(result)
-	result = e.CyclotomicSquare(result)
-
-	return e.Set(result)
+	return result
 }
 
-// MulBy034 multiplication by sparse element (c0,0,0,c3,c4,0)
-func (e Ext6) MulBy034(z *E6, l *LineEvaluation) *E6 {
+// MulBy014 multiplies z by an E6 sparse element of the form
+//
+//	E6{
+//		B0: E3{A0: c0, A1: c1, A2: 0},
+//		B1: E3{A0: 0,  A1: 1,  A2: 0},
+//	}
+func (e *Ext6) MulBy014(z *E6, c0, c1 *baseEl) *E6 {
 	z = e.Reduce(z)
 
-	a := e.Ext3.MulByElement(&z.B0, &l.R0)
+	a := e.MulBy01(&z.B0, c0, c1)
 
-	b := e.Ext3.MulBy01(&z.B1, &l.R1, &l.R2)
+	var b E3
+	// Mul by E3{0, 1, 0}
+	b.A0 = *mulFpByNonResidue(e.fp, &z.B1.A2)
+	b.A2 = z.B1.A1
+	b.A1 = z.B1.A0
 
-	l.R0 = *e.Fp.Add(&l.R0, &l.R1)
-	d := e.Ext3.Add(&z.B0, &z.B1)
-	d = e.Ext3.MulBy01(d, &l.R0, &l.R2)
+	one := e.fp.One()
+	d := e.fp.Add(c1, one)
 
-	b1 := e.Ext3.Add(a, b)
-	b1 = e.Ext3.Neg(b1)
-	b1 = e.Ext3.Add(b1, d)
-	b0 := e.Ext3.MulByNonResidue(b)
-	b0 = e.Ext3.Add(b0, a)
+	zC1 := e.Ext3.Add(&z.B1, &z.B0)
+	zC1 = e.Ext3.MulBy01(zC1, c0, d)
+	zC1 = e.Ext3.Sub(zC1, a)
+	zC1 = e.Ext3.Sub(zC1, &b)
+	zC0 := e.Ext3.MulByNonResidue(&b)
+	zC0 = e.Ext3.Add(zC0, a)
 
 	return &E6{
-		B0: *b0,
-		B1: *b1,
+		B0: *zC0,
+		B1: *zC1,
 	}
 }
 
-// Mul034By034 multiplication of sparse element (c0,0,0,c3,c4,0) by sparse element (d0,0,0,d3,d4,0)
-func (e Ext6) Mul034By034(d0, d3, d4, c0, c3, c4 *BaseField) *E6 {
+//	multiplies two E6 sparse element of the form:
+//
+//	E6{
+//		B0: E3{A0: c0, A1: c1, A2: 0},
+//		B1: E3{A0: 0,  A1: 1,  A2: 0},
+//	}
+//
+// and
+//
+//	E6{
+//		B0: E3{A0: d0, A1: d1, A2: 0},
+//		B1: E3{A0: 0,  A1: 1,  A2: 0},
+//	}
+func (e Ext6) Mul014By014(d0, d1, c0, c1 *baseEl) [5]*baseEl {
+	one := e.fp.One()
+	x0 := e.fp.Mul(c0, d0)
+	x1 := e.fp.Mul(c1, d1)
+	tmp := e.fp.Add(c0, one)
+	x04 := e.fp.Add(d0, one)
+	x04 = e.fp.Mul(x04, tmp)
+	x04 = e.fp.Sub(x04, x0)
+	x04 = e.fp.Sub(x04, one)
+	tmp = e.fp.Add(c0, c1)
+	x01 := e.fp.Add(d0, d1)
+	x01 = e.fp.Mul(x01, tmp)
+	x01 = e.fp.Sub(x01, x0)
+	x01 = e.fp.Sub(x01, x1)
+	tmp = e.fp.Add(c1, one)
+	x14 := e.fp.Add(d1, one)
+	x14 = e.fp.Mul(x14, tmp)
+	x14 = e.fp.Sub(x14, x1)
+	x14 = e.fp.Sub(x14, one)
 
-	x0 := e.Fp.Mul(c0, d0)
-	x3 := e.Fp.Mul(c3, d3)
-	x4 := e.Fp.Mul(c4, d4)
-	tmp := e.Fp.Add(c0, c4)
-	x04 := e.Fp.Add(d0, d4)
-	x04 = e.Fp.Mul(x04, tmp)
-	x04 = e.Fp.Sub(x04, x0)
-	x04 = e.Fp.Sub(x04, x4)
-	tmp = e.Fp.Add(c0, c3)
-	x03 := e.Fp.Add(d0, d3)
-	x03 = e.Fp.Mul(x03, tmp)
-	x03 = e.Fp.Sub(x03, x0)
-	x03 = e.Fp.Sub(x03, x3)
-	tmp = e.Fp.Add(c3, c4)
-	x34 := e.Fp.Add(d3, d4)
-	x34 = e.Fp.Mul(x34, tmp)
-	x34 = e.Fp.Sub(x34, x3)
-	x34 = e.Fp.Sub(x34, x4)
+	four := emulated.ValueOf[emulated.BW6761Fp](big.NewInt(4))
+	zC0B0 := e.fp.Sub(x0, &four)
 
-	var z E6
-	z.B0.A0 = *MulByNonResidue(e.Fp, x4)
-	z.B0.A0 = *e.Fp.Add(&z.B0.A0, x0)
-	z.B0.A1 = *x3
-	z.B0.A2 = *x34
-	z.B1.A0 = *x03
-	z.B1.A1 = *x04
-	z.B1.A2 = *e.Fp.Zero()
+	return [5]*baseEl{zC0B0, x01, x1, x04, x14}
+}
 
-	return &z
+// Mul01245By014 multiplies two E6 sparse element of the form
+//
+//	E6{
+//		C0: E3{B0: x0, B1: x1, B2: x2},
+//		C1: E3{B0: 0,  B1: x4, B2: x5},
+//	}
+//
+//	and
+//
+//	E6{
+//		C0: E3{B0: d0, B1: d1, B2: 0},
+//		C1: E3{B0: 0,  B1: 1,  B2: 0},
+//	}
+func (e *Ext6) Mul01245By014(x [5]*baseEl, d0, d1 *baseEl) *E6 {
+	zero := e.fp.Zero()
+	c0 := &E3{A0: *x[0], A1: *x[1], A2: *x[2]}
+	b := &E3{
+		A0: *x[0],
+		A1: *e.fp.Add(x[1], x[3]),
+		A2: *e.fp.Add(x[2], x[4]),
+	}
+	a := e.Ext3.MulBy01(b, d0, e.fp.Add(d1, e.fp.One()))
+	b = e.Ext3.MulBy01(c0, d0, d1)
+	c := &E3{
+		A0: *mulFpByNonResidue(e.fp, x[4]),
+		A1: *zero,
+		A2: *x[3],
+	}
+	z1 := e.Ext3.Sub(a, b)
+	z1 = e.Ext3.Sub(z1, c)
+	z0 := e.Ext3.MulByNonResidue(c)
+	z0 = e.Ext3.Add(z0, b)
+	return &E6{
+		B0: *z0,
+		B1: *z1,
+	}
 }

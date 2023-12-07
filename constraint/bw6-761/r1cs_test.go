@@ -28,7 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/consensys/gnark/constraint/bw6-761"
+	cs "github.com/consensys/gnark/constraint/bw6-761"
 
 	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
 )
@@ -52,7 +52,7 @@ func TestSerialization(t *testing.T) {
 				return
 			}
 
-			// copmpile a second time to ensure determinism
+			// compile a second time to ensure determinism
 			r1cs2, err := frontend.Compile(fr.Modulus(), r1cs.NewBuilder, tc.Circuit)
 			if err != nil {
 				t.Fatal(err)
@@ -83,10 +83,8 @@ func TestSerialization(t *testing.T) {
 						"field",
 						"CoeffTable.mCoeffs",
 						"System.lbWireLevel",
-						"System.lbHints",
 						"System.genericHint",
 						"System.SymbolTable",
-						"System.lbOutputs",
 						"System.bitLen")); diff != "" {
 					t.Fatalf("round trip mismatch (-want +got):\n%s", diff)
 				}

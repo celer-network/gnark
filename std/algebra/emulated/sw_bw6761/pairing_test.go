@@ -1,252 +1,260 @@
-/*
- *
- * Copyright © 2020 ConsenSys
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * /
- */
-
 package sw_bw6761
 
 import (
+	"bytes"
 	"crypto/rand"
+	"fmt"
+	"testing"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	bw6761 "github.com/consensys/gnark-crypto/ecc/bw6-761"
-	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
-	"github.com/consensys/gnark/std/algebra/emulated/fields_bw6761"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/test"
-	"testing"
 )
 
-const testCurve = ecc.BN254
-
-type millerLoopBW6761 struct {
-	A G1Affine
-	B G2Affine
-	C GT
-}
-
-func (circuit *millerLoopBW6761) Define(api frontend.API) error {
-	pr, err := NewPairing(api)
+func randomG1G2Affines() (bw6761.G1Affine, bw6761.G2Affine) {
+	_, _, G1AffGen, G2AffGen := bw6761.Generators()
+	mod := bw6761.ID.ScalarField()
+	s1, err := rand.Int(rand.Reader, mod)
 	if err != nil {
 		panic(err)
 	}
-	expected, err := pr.MillerLoop([]*G1Affine{&circuit.A}, []*G2Affine{&circuit.B})
+	s2, err := rand.Int(rand.Reader, mod)
 	if err != nil {
-		return err
+		panic(err)
 	}
+	var p bw6761.G1Affine
+	p.ScalarMultiplication(&G1AffGen, s1)
+	var q bw6761.G2Affine
+	q.ScalarMultiplication(&G2AffGen, s2)
+	return p, q
+}
 
-	pr.Equal(expected, &circuit.C)
+type FinalExponentiationCircuit struct {
+	InGt GTEl
+	Res  GTEl
+}
 
+func (c *FinalExponentiationCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
+	if err != nil {
+		return fmt.Errorf("new pairing: %w", err)
+	}
+	res := pairing.FinalExponentiation(&c.InGt)
+	pairing.AssertIsEqual(res, &c.Res)
 	return nil
 }
 
-func TestMillerLoopBW6761(t *testing.T) {
+func TestFinalExponentiationTestSolve(t *testing.T) {
 	assert := test.NewAssert(t)
-	// witness values
-	var (
-		a     bw6761.G1Affine
-		b     bw6761.G2Affine
-		c     bw6761.GT
-		r1, _ = rand.Int(rand.Reader, fr.Modulus())
-		r2, _ = rand.Int(rand.Reader, fr.Modulus())
-	)
-	_, _, g1, g2 := bw6761.Generators()
-
-	a.ScalarMultiplication(&g1, r1)
-	b.ScalarMultiplication(&g2, r2)
-	c, err := bw6761.MillerLoop([]bw6761.G1Affine{a}, []bw6761.G2Affine{b})
-	if err != nil {
-		panic(err)
+	var gt bw6761.GT
+	gt.SetRandom()
+	res := bw6761.FinalExponentiation(&gt)
+	witness := FinalExponentiationCircuit{
+		InGt: NewGTEl(gt),
+		Res:  NewGTEl(res),
 	}
-
-	witness := millerLoopBW6761{
-		A: NewG1Affine(a),
-		B: NewG2Affine(b),
-		C: fields_bw6761.NewE6(c),
-	}
-
-	err = test.IsSolved(&millerLoopBW6761{}, &witness, testCurve.ScalarField())
+	err := test.IsSolved(&FinalExponentiationCircuit{}, &witness, ecc.BN254.ScalarField())
 	assert.NoError(err)
-
-	//_, err = frontend.Compile(testCurve.ScalarField(), r1cs.NewBuilder, &millerLoopBW6761{}, frontend.IgnoreUnconstrainedInputs())
-	//assert.NoError(err)
 }
 
-type tripleMillerLoopBW6761 struct {
-	A1, A2, A3 G1Affine
-	B1, B2, B3 G2Affine
-	C          GT
+type PairCircuit struct {
+	InG1 G1Affine
+	InG2 G2Affine
+	Res  GTEl
 }
 
-func (circuit *tripleMillerLoopBW6761) Define(api frontend.API) error {
-	pr, err := NewPairing(api)
+func (c *PairCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("new pairing: %w", err)
 	}
-	expected, err := pr.MillerLoop([]*G1Affine{&circuit.A1, &circuit.A2, &circuit.A3}, []*G2Affine{&circuit.B1, &circuit.B2, &circuit.B3})
+	res, err := pairing.Pair([]*G1Affine{&c.InG1}, []*G2Affine{&c.InG2})
 	if err != nil {
-		return err
+		return fmt.Errorf("pair: %w", err)
 	}
-
-	pr.Equal(expected, &circuit.C)
-
+	pairing.AssertIsEqual(res, &c.Res)
 	return nil
 }
 
-func TestDoubleMillerLoopBW6761(t *testing.T) {
+func TestPairTestSolve(t *testing.T) {
 	assert := test.NewAssert(t)
-	// witness values
-	var (
-		a1, a2, a3 bw6761.G1Affine
-		b1, b2, b3 bw6761.G2Affine
-		c          bw6761.GT
-		r1, _      = rand.Int(rand.Reader, fr.Modulus())
-		r2, _      = rand.Int(rand.Reader, fr.Modulus())
-		r3, _      = rand.Int(rand.Reader, fr.Modulus())
-		r4, _      = rand.Int(rand.Reader, fr.Modulus())
-		r5, _      = rand.Int(rand.Reader, fr.Modulus())
-		r6, _      = rand.Int(rand.Reader, fr.Modulus())
-	)
-	_, _, g1, g2 := bw6761.Generators()
-
-	a1.ScalarMultiplication(&g1, r1)
-	a2.ScalarMultiplication(&g1, r2)
-	a3.ScalarMultiplication(&g1, r3)
-	b1.ScalarMultiplication(&g2, r4)
-	b2.ScalarMultiplication(&g2, r5)
-	b3.ScalarMultiplication(&g2, r6)
-	c, err := bw6761.MillerLoop([]bw6761.G1Affine{a1, a2, a3}, []bw6761.G2Affine{b1, b2, b3})
-	if err != nil {
-		panic(err)
+	p, q := randomG1G2Affines()
+	res, err := bw6761.Pair([]bw6761.G1Affine{p}, []bw6761.G2Affine{q})
+	assert.NoError(err)
+	witness := PairCircuit{
+		InG1: NewG1Affine(p),
+		InG2: NewG2Affine(q),
+		Res:  NewGTEl(res),
 	}
-
-	witness := tripleMillerLoopBW6761{
-		A1: NewG1Affine(a1),
-		A2: NewG1Affine(a2),
-		A3: NewG1Affine(a3),
-		B1: NewG2Affine(b1),
-		B2: NewG2Affine(b2),
-		B3: NewG2Affine(b3),
-		C:  fields_bw6761.NewE6(c),
-	}
-
-	err = test.IsSolved(&tripleMillerLoopBW6761{}, &witness, testCurve.ScalarField())
+	err = test.IsSolved(&PairCircuit{}, &witness, ecc.BN254.ScalarField())
 	assert.NoError(err)
 }
 
-type finalExponentiationBW6761 struct {
-	A GT
-	B GT
+func TestPairFixedTestSolve(t *testing.T) {
+	assert := test.NewAssert(t)
+	p, q := randomG1G2Affines()
+	res, err := bw6761.Pair([]bw6761.G1Affine{p}, []bw6761.G2Affine{q})
+	assert.NoError(err)
+	witness := PairCircuit{
+		InG1: NewG1Affine(p),
+		InG2: NewG2AffineFixed(q),
+		Res:  NewGTEl(res),
+	}
+	err = test.IsSolved(&PairCircuit{InG2: NewG2AffineFixedPlaceholder()}, &witness, ecc.BN254.ScalarField())
+	assert.NoError(err)
 }
 
-func (circuit *finalExponentiationBW6761) Define(api frontend.API) error {
-	pr, err := NewPairing(api)
-	if err != nil {
-		panic(err)
-	}
-	expected := pr.FinalExponentiation(&circuit.A)
-	if err != nil {
-		return err
-	}
+type MultiPairCircuit struct {
+	InG1 G1Affine
+	InG2 G2Affine
+	Res  GTEl
+	n    int
+}
 
-	pr.Equal(expected, &circuit.B)
-
+func (c *MultiPairCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
+	if err != nil {
+		return fmt.Errorf("new pairing: %w", err)
+	}
+	P, Q := []*G1Affine{}, []*G2Affine{}
+	for i := 0; i < c.n; i++ {
+		P = append(P, &c.InG1)
+		Q = append(Q, &c.InG2)
+	}
+	res, err := pairing.Pair(P, Q)
+	if err != nil {
+		return fmt.Errorf("pair: %w", err)
+	}
+	pairing.AssertIsEqual(res, &c.Res)
 	return nil
 }
 
-func TestFinalExponentiationBW6761(t *testing.T) {
+func TestMultiPairTestSolve(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
 	assert := test.NewAssert(t)
-	// witness values
-	var (
-		a     bw6761.G1Affine
-		b     bw6761.G2Affine
-		c     bw6761.GT
-		r1, _ = rand.Int(rand.Reader, fr.Modulus())
-		r2, _ = rand.Int(rand.Reader, fr.Modulus())
-	)
-	_, _, g1, g2 := bw6761.Generators()
-
-	a.ScalarMultiplication(&g1, r1)
-	b.ScalarMultiplication(&g2, r2)
-	c, err := bw6761.MillerLoop([]bw6761.G1Affine{a}, []bw6761.G2Affine{b})
-	if err != nil {
-		panic(err)
+	p1, q1 := randomG1G2Affines()
+	p := make([]bw6761.G1Affine, 3)
+	q := make([]bw6761.G2Affine, 3)
+	for i := 0; i < 3; i++ {
+		p[i] = p1
+		q[i] = q1
 	}
 
-	d := bw6761.FinalExponentiation(&c)
-
-	witness := finalExponentiationBW6761{
-		A: fields_bw6761.NewE6(c),
-		B: fields_bw6761.NewE6(d),
+	for i := 2; i < 3; i++ {
+		res, err := bw6761.Pair(p[:i], q[:i])
+		assert.NoError(err)
+		witness := MultiPairCircuit{
+			InG1: NewG1Affine(p1),
+			InG2: NewG2Affine(q1),
+			Res:  NewGTEl(res),
+		}
+		err = test.IsSolved(&MultiPairCircuit{n: i}, &witness, ecc.BN254.ScalarField())
+		assert.NoError(err)
 	}
-
-	err = test.IsSolved(&finalExponentiationBW6761{}, &witness, testCurve.ScalarField())
-	assert.NoError(err)
-
-	_, err = frontend.Compile(testCurve.ScalarField(), r1cs.NewBuilder, &finalExponentiationBW6761{}, frontend.IgnoreUnconstrainedInputs())
-	assert.NoError(err)
 }
 
-type pairingBW6761 struct {
-	A G1Affine
-	B G2Affine
-	C GT
-	D GT
+type PairingCheckCircuit struct {
+	In1G1 G1Affine
+	In2G1 G1Affine
+	In1G2 G2Affine
+	In2G2 G2Affine
 }
 
-func (circuit *pairingBW6761) Define(api frontend.API) error {
-	pr, err := NewPairing(api)
+func (c *PairingCheckCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("new pairing: %w", err)
 	}
-	expected, err := pr.Pair([]*G1Affine{&circuit.A}, []*G2Affine{&circuit.B})
+	err = pairing.PairingCheck([]*G1Affine{&c.In1G1, &c.In1G1, &c.In2G1, &c.In2G1}, []*G2Affine{&c.In1G2, &c.In2G2, &c.In1G2, &c.In2G2})
 	if err != nil {
-		return err
+		return fmt.Errorf("pair: %w", err)
 	}
-
-	pr.Equal(expected, &circuit.C)
-
 	return nil
 }
 
-func TestPairingBW6761(t *testing.T) {
+func TestPairingCheckTestSolve(t *testing.T) {
 	assert := test.NewAssert(t)
-	// witness values
-	var (
-		a     bw6761.G1Affine
-		b     bw6761.G2Affine
-		c     bw6761.GT
-		r1, _ = rand.Int(rand.Reader, fr.Modulus())
-		r2, _ = rand.Int(rand.Reader, fr.Modulus())
-	)
-	_, _, g1, g2 := bw6761.Generators()
-
-	a.ScalarMultiplication(&g1, r1)
-	b.ScalarMultiplication(&g2, r2)
-	c, err := bw6761.Pair([]bw6761.G1Affine{a}, []bw6761.G2Affine{b})
-	if err != nil {
-		panic(err)
+	p1, q1 := randomG1G2Affines()
+	_, q2 := randomG1G2Affines()
+	var p2 bw6761.G1Affine
+	p2.Neg(&p1)
+	witness := PairingCheckCircuit{
+		In1G1: NewG1Affine(p1),
+		In1G2: NewG2Affine(q1),
+		In2G1: NewG1Affine(p2),
+		In2G2: NewG2Affine(q2),
 	}
-
-	witness := pairingBW6761{
-		A: NewG1Affine(a),
-		B: NewG2Affine(b),
-		C: fields_bw6761.NewE6(c),
-	}
-
-	err = test.IsSolved(&pairingBW6761{}, &witness, testCurve.ScalarField())
+	err := test.IsSolved(&PairingCheckCircuit{}, &witness, ecc.BN254.ScalarField())
 	assert.NoError(err)
+}
+
+// bench
+func BenchmarkPairing(b *testing.B) {
+
+	p, q := randomG1G2Affines()
+	res, err := bw6761.Pair([]bw6761.G1Affine{p}, []bw6761.G2Affine{q})
+	if err != nil {
+		b.Fatal(err)
+	}
+	witness := PairCircuit{
+		InG1: NewG1Affine(p),
+		InG2: NewG2Affine(q),
+		Res:  NewGTEl(res),
+	}
+	w, err := frontend.NewWitness(&witness, ecc.BN254.ScalarField())
+	if err != nil {
+		b.Fatal(err)
+	}
+	var ccs constraint.ConstraintSystem
+	b.Run("compile scs", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if ccs, err = frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, &PairCircuit{}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	var buf bytes.Buffer
+	_, err = ccs.WriteTo(&buf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Logf("scs size: %d (bytes), nb constraints %d, nbInstructions: %d", buf.Len(), ccs.GetNbConstraints(), ccs.GetNbInstructions())
+	b.Run("solve scs", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := ccs.Solve(w); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("compile r1cs", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if ccs, err = frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &PairCircuit{}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	buf.Reset()
+	_, err = ccs.WriteTo(&buf)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Logf("r1cs size: %d (bytes), nb constraints %d, nbInstructions: %d", buf.Len(), ccs.GetNbConstraints(), ccs.GetNbInstructions())
+
+	b.Run("solve r1cs", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := ccs.Solve(w); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

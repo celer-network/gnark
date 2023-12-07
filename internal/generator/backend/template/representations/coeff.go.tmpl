@@ -53,9 +53,8 @@ func (ct *CoeffTable) AddCoeff(coeff constraint.Element) uint32 {
 	return cID
 }
 
-
-func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constraint.Term {
-	cID := ct.AddCoeff(*coeff)
+func (ct *CoeffTable) MakeTerm(coeff constraint.Element, variableID int) constraint.Term {
+	cID := ct.AddCoeff(coeff)
 	return constraint.Term{VID: uint32(variableID), CID: cID}
 }
 
@@ -63,9 +62,6 @@ func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constr
 func (ct *CoeffTable) CoeffToString(cID int) string {
 	return ct.Coefficients[cID].String()
 }
-
-
-
 
 // implements constraint.Field
 type field struct{}
@@ -169,4 +165,12 @@ func (engine *field) One() constraint.Element {
 func (engine *field) String(a constraint.Element) string {
 	e := (*fr.Element)(a[:])
 	return e.String()
+}
+
+func (engine *field) Uint64(a constraint.Element) (uint64, bool) {
+	e := (*fr.Element)(a[:])
+	if !e.IsUint64() {
+		return 0, false
+	}
+	return e.Uint64(), true
 }

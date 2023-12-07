@@ -22,9 +22,9 @@ func GetHints() []solver.Hint {
 		QuoHint,
 		InverseHint,
 		MultiplicationHint,
-		RemHint,
 		RightShift,
 		SqrtHint,
+		mulHint,
 	}
 }
 
@@ -43,7 +43,11 @@ func (f *Field[T]) computeMultiplicationHint(leftLimbs, rightLimbs []frontend.Va
 // nbMultiplicationResLimbs returns the number of limbs which fit the
 // multiplication result.
 func nbMultiplicationResLimbs(lenLeft, lenRight int) int {
-	return lenLeft + lenRight - 1
+	res := lenLeft + lenRight - 1
+	if res < 0 {
+		res = 0
+	}
+	return res
 }
 
 // MultiplicationHint unpacks the factors and parameters from inputs, computes
@@ -84,6 +88,31 @@ func MultiplicationHint(mod *big.Int, inputs []*big.Int, outputs []*big.Int) err
 	return nil
 }
 
+// computeQuoHint packs the inputs for QuoHint function and returns z = x / y
+// (discards remainder)
+func (f *Field[T]) computeQuoHint(x *Element[T]) (z *Element[T], err error) {
+	var fp T
+	resLen := (uint(len(x.Limbs))*fp.BitsPerLimb() + x.overflow + 1 - // diff total bitlength
+		uint(fp.Modulus().BitLen()) + // subtract modulus bitlength
+		fp.BitsPerLimb() - 1) / // to round up
+		fp.BitsPerLimb()
+
+	hintInputs := []frontend.Variable{
+		fp.BitsPerLimb(),
+		len(x.Limbs),
+	}
+	p := f.Modulus()
+	hintInputs = append(hintInputs, x.Limbs...)
+	hintInputs = append(hintInputs, p.Limbs...)
+
+	limbs, err := f.api.NewHint(QuoHint, int(resLen), hintInputs...)
+	if err != nil {
+		return nil, err
+	}
+
+	return f.packLimbs(limbs, false), nil
+}
+
 // computeRemHint packs inputs for the RemHint hint function.
 // sets z to the remainder x%y for y != 0 and returns z.
 func (f *Field[T]) computeRemHint(x, y *Element[T]) (z *Element[T], err error) {
@@ -115,31 +144,6 @@ func RemHint(_ *big.Int, inputs []*big.Int, outputs []*big.Int) error {
 		return fmt.Errorf("decompose remainder: %w", err)
 	}
 	return nil
-}
-
-// computeQuoHint packs the inputs for QuoHint function and returns z = x / y
-// (discards remainder)
-func (f *Field[T]) computeQuoHint(x *Element[T]) (z *Element[T], err error) {
-	var fp T
-	resLen := (uint(len(x.Limbs))*fp.BitsPerLimb() + x.overflow + 1 - // diff total bitlength
-		uint(fp.Modulus().BitLen()) + // subtract modulus bitlength
-		fp.BitsPerLimb() - 1) / // to round up
-		fp.BitsPerLimb()
-
-	hintInputs := []frontend.Variable{
-		fp.BitsPerLimb(),
-		len(x.Limbs),
-	}
-	p := f.Modulus()
-	hintInputs = append(hintInputs, x.Limbs...)
-	hintInputs = append(hintInputs, p.Limbs...)
-
-	limbs, err := f.api.NewHint(QuoHint, int(resLen), hintInputs...)
-	if err != nil {
-		return nil, err
-	}
-
-	return f.packLimbs(limbs, false), nil
 }
 
 // QuoHint sets z to the quotient x/y for y != 0 and returns z.

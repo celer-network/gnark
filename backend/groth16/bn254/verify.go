@@ -19,14 +19,19 @@ package groth16
 import (
 	"errors"
 	"fmt"
+	"io"
+	"text/template"
+	"time"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/pedersen"
+	"github.com/consensys/gnark-crypto/utils"
+	"github.com/consensys/gnark/backend"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/logger"
-	"io"
-	"math/big"
-	"text/template"
-	"time"
 )
 
 var (
@@ -35,12 +40,17 @@ var (
 )
 
 // Verify verifies a proof with given VerifyingKey and publicWitness
-func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
-
-	nbPublicVars := len(vk.G1.K)
-	if vk.CommitmentInfo.Is() {
-		nbPublicVars--
+func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...backend.VerifierOption) error {
+	opt, err := backend.NewVerifierConfig(opts...)
+	if err != nil {
+		return fmt.Errorf("new verifier config: %w", err)
 	}
+	if opt.HashToFieldFn == nil {
+		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
+	}
+
+	nbPublicVars := len(vk.G1.K) - len(vk.PublicAndCommitmentCommitted)
+
 	if len(publicWitness) != nbPublicVars-1 {
 		return fmt.Errorf("invalid witness size, got %d, expected %d (public - ONE_WIRE)", len(publicWitness), len(vk.G1.K)-1)
 	}
@@ -63,21 +73,37 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 		close(chDone)
 	}()
 
-	if vk.CommitmentInfo.Is() {
+	maxNbPublicCommitted := 0
+	for _, s := range vk.PublicAndCommitmentCommitted { // iterate over commitments
+		maxNbPublicCommitted = utils.Max(maxNbPublicCommitted, len(s))
+	}
+	commitmentsSerialized := make([]byte, len(vk.PublicAndCommitmentCommitted)*fr.Bytes)
+	commitmentPrehashSerialized := make([]byte, curve.SizeOfG1AffineUncompressed+maxNbPublicCommitted*fr.Bytes)
+	for i := range vk.PublicAndCommitmentCommitted { // solveCommitmentWire
+		copy(commitmentPrehashSerialized, proof.Commitments[i].Marshal())
+		offset := curve.SizeOfG1AffineUncompressed
+		for j := range vk.PublicAndCommitmentCommitted[i] {
+			copy(commitmentPrehashSerialized[offset:], publicWitness[vk.PublicAndCommitmentCommitted[i][j]-1].Marshal())
+			offset += fr.Bytes
+		}
+		opt.HashToFieldFn.Write(commitmentPrehashSerialized[:offset])
+		hashBts := opt.HashToFieldFn.Sum(nil)
+		opt.HashToFieldFn.Reset()
+		nbBuf := fr.Bytes
+		if opt.HashToFieldFn.Size() < fr.Bytes {
+			nbBuf = opt.HashToFieldFn.Size()
+		}
+		var res fr.Element
+		res.SetBytes(hashBts[:nbBuf])
+		publicWitness = append(publicWitness, res)
+		copy(commitmentsSerialized[i*fr.Bytes:], res.Marshal())
+	}
 
-		if err := vk.CommitmentKey.Verify(proof.Commitment, proof.CommitmentPok); err != nil {
+	if folded, err := pedersen.FoldCommitments(proof.Commitments, commitmentsSerialized); err != nil {
+		return err
+	} else {
+		if err = vk.CommitmentKey.Verify(folded, proof.CommitmentPok); err != nil {
 			return err
-		}
-
-		publicCommitted := make([]*big.Int, vk.CommitmentInfo.NbPublicCommitted())
-		for i := range publicCommitted {
-			var b big.Int
-			publicWitness[vk.CommitmentInfo.Committed[i]-1].BigInt(&b)
-			publicCommitted[i] = &b
-		}
-
-		if res, err := solveCommitmentWire(&vk.CommitmentInfo, &proof.Commitment, publicCommitted); err == nil {
-			publicWitness = append(publicWitness, res)
 		}
 	}
 
@@ -88,8 +114,8 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 	}
 	kSum.AddMixed(&vk.G1.K[0])
 
-	if vk.CommitmentInfo.Is() {
-		kSum.AddMixed(&proof.Commitment)
+	for i := range proof.Commitments {
+		kSum.AddMixed(&proof.Commitments[i])
 	}
 
 	var kSumAff curve.G1Affine
@@ -114,16 +140,24 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector) error {
 	return nil
 }
 
-// ExportSolidity writes a solidity Verifier contract on provided writer
-// while this uses an audited template https://github.com/appliedzkp/semaphore/blob/master/contracts/sol/verifier.sol
-// audit report https://github.com/appliedzkp/semaphore/blob/master/audit/Audit%20Report%20Summary%20for%20Semaphore%20and%20MicroMix.pdf
-// this is an experimental feature and gnark solidity generator as not been thoroughly tested.
+// ExportSolidity writes a solidity Verifier contract on provided writer.
+// This is an experimental feature and gnark solidity generator as not been thoroughly tested.
 //
 // See https://github.com/ConsenSys/gnark-tests for example usage.
 func (vk *VerifyingKey) ExportSolidity(w io.Writer) error {
 	helpers := template.FuncMap{
 		"sub": func(a, b int) int {
 			return a - b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
+		"intRange": func(max int) []int {
+			out := make([]int, max)
+			for i := 0; i < max; i++ {
+				out[i] = i
+			}
+			return out
 		},
 	}
 
@@ -132,6 +166,21 @@ func (vk *VerifyingKey) ExportSolidity(w io.Writer) error {
 		return err
 	}
 
+	// negate Beta, Gamma and Delta, to avoid negating proof elements in the verifier
+	var betaNeg curve.G2Affine
+	betaNeg.Neg(&vk.G2.Beta)
+	beta := vk.G2.Beta
+	vk.G2.Beta = betaNeg
+	vk.G2.Gamma, vk.G2.gammaNeg = vk.G2.gammaNeg, vk.G2.Gamma
+	vk.G2.Delta, vk.G2.deltaNeg = vk.G2.deltaNeg, vk.G2.Delta
+
 	// execute template
-	return tmpl.Execute(w, vk)
+	err = tmpl.Execute(w, vk)
+
+	// restore Beta, Gamma and Delta
+	vk.G2.Beta = beta
+	vk.G2.Gamma, vk.G2.gammaNeg = vk.G2.gammaNeg, vk.G2.Gamma
+	vk.G2.Delta, vk.G2.deltaNeg = vk.G2.deltaNeg, vk.G2.Delta
+
+	return err
 }

@@ -50,7 +50,7 @@ type RadixTwoFri struct {
 
 	// hash function that is used for Fiat Shamir and for committing to
 	// the oracles.
-	h hash.Hash
+	h hash.FieldHasher
 
 	// nbSteps number of interactions between the prover and the verifier
 	nbSteps int
@@ -66,7 +66,7 @@ type RadixTwoFri struct {
 // NewRadixTwoFri creates an FFT-like oracle proof of proximity.
 // * h is the hash function that is used for the Merkle proofs
 // * gen is the generator of the cyclic group of unity of size \rho * size
-func NewRadixTwoFri(size uint64, h hash.Hash, gen big.Int) RadixTwoFri {
+func NewRadixTwoFri(size uint64, h hash.FieldHasher, gen big.Int) RadixTwoFri {
 
 	var res RadixTwoFri
 
@@ -98,7 +98,7 @@ func (s RadixTwoFri) verifyProofOfProximitySingleRound(api frontend.API, salt fr
 		xis[i] = paddNaming(fmt.Sprintf("x%d", i), frSize)
 	}
 	xis[s.nbSteps] = paddNaming("s0", frSize)
-	fs := fiatshamir.NewTranscript(api, s.h, xis...)
+	fs := fiatshamir.NewTranscript(api, s.h, xis, fiatshamir.WithDomainSeparation())
 	xi := make([]frontend.Variable, s.nbSteps)
 
 	// the salt is binded to the first challenge, to ensure the challenges

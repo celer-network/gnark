@@ -2,14 +2,17 @@
 import (
 	{{ template "import_curve" . }}
 	{{ template "import_fft" . }}
-	
+	{{ template "import_pedersen" . }}
+	"github.com/consensys/gnark/backend/groth16/internal/test_utils"
+	"github.com/consensys/gnark/io"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"bytes"
 	"math/big"
-	"reflect"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/prop"
+	"github.com/leanovate/gopter/gen"
 
 	"testing"
 )
@@ -23,44 +26,20 @@ func TestProofSerialization(t *testing.T) {
 
 	properties.Property("Proof -> writer -> reader -> Proof should stay constant", prop.ForAll(
 		func(ar, krs curve.G1Affine, bs curve.G2Affine) bool {
-			var proof, pCompressed, pRaw Proof
+			var proof Proof
 
 			// create a random proof 
 			proof.Ar = ar
 			proof.Krs = krs
 			proof.Bs = bs
-
-			var bufCompressed bytes.Buffer
-			written, err := proof.WriteTo(&bufCompressed)
-			if err != nil {
-				return false
+			proof.Commitments = make([]curve.G1Affine, 10)
+			for i := range proof.Commitments {
+				proof.Commitments[i] = ar
 			}
+			proof.CommitmentPok = ar
 
-			read, err := pCompressed.ReadFrom(&bufCompressed)
-			if err != nil {
-				return false
-			}
-
-			if read != written {
-				return false
-			}
-
-			var bufRaw bytes.Buffer
-			written, err = proof.WriteRawTo(&bufRaw)
-			if err != nil {
-				return false
-			}
-
-			read, err = pRaw.ReadFrom(&bufRaw)
-			if err != nil {
-				return false
-			}
-
-			if read != written {
-				return false
-			}
-
-			return reflect.DeepEqual(&proof, &pCompressed) && reflect.DeepEqual(&proof, &pRaw)
+			err := io.RoundTripCheck(&proof, func() any {return new(Proof)})
+			return err == nil 
 		},
 		GenG1(),
 		GenG1(),
@@ -73,14 +52,10 @@ func TestProofSerialization(t *testing.T) {
 
 
 func TestVerifyingKeySerialization(t *testing.T) {
-	parameters := gopter.DefaultTestParameters()
-	parameters.MinSuccessfulTests = 10
-	
-	properties := gopter.NewProperties(parameters)
 
-	properties.Property("VerifyingKey -> writer -> reader -> VerifyingKey should stay constant", prop.ForAll(
-		func(p1 curve.G1Affine, p2 curve.G2Affine) bool {
-			var vk, vkCompressed, vkRaw VerifyingKey
+	roundTrip := func(withCommitment bool) func(curve.G1Affine, curve.G2Affine) bool {
+		return func(p1 curve.G1Affine, p2 curve.G2Affine) bool {
+			var vk VerifyingKey
 
 			// create a random vk
 			nbWires := 6
@@ -107,45 +82,39 @@ func TestVerifyingKeySerialization(t *testing.T) {
 				vk.G1.K[i] = p1
 			}
 
+			if withCommitment {
+				vk.PublicAndCommitmentCommitted = test_utils.Random2DIntSlice(5, 10) // TODO: Use gopter randomization
+				bases := make([][]curve.G1Affine, len(vk.PublicAndCommitmentCommitted))
+				elem := p1
+				for i := 0; i < len(vk.PublicAndCommitmentCommitted); i++ {
+					bases[i] = make([]curve.G1Affine, len(vk.PublicAndCommitmentCommitted[i]))
+					for j := range bases[i] {
+						bases[i][j] = elem
+						elem.Add(&elem, &p1)
+					}
+				}
+				_, vk.CommitmentKey, err = pedersen.Setup(bases...)
+				assert.NoError(t, err)
+			}
 		
-			var bufCompressed bytes.Buffer
-			written, err := vk.WriteTo(&bufCompressed)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
+			err = io.RoundTripCheck(&vk, func() any {return new(VerifyingKey)})
+			return err == nil 
+		}
+	}
 
-			read, err := vkCompressed.ReadFrom(&bufCompressed)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
+	parameters := gopter.DefaultTestParameters()
+	parameters.MinSuccessfulTests = 10
+	
+	properties := gopter.NewProperties(parameters)
 
-			if read != written {
-				t.Log("read != written")
-				return false
-			}
+	properties.Property("VerifyingKey -> writer -> reader -> VerifyingKey should stay constant", prop.ForAll(
+		roundTrip(false),
+		GenG1(),
+		GenG2(),
+	))
 
-			var bufRaw bytes.Buffer
-			written, err = vk.WriteRawTo(&bufRaw)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
-
-			read, err = vkRaw.ReadFrom(&bufRaw)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
-
-			if read != written {
-				t.Log("read raw != written")
-				return false
-			}
-
-			return reflect.DeepEqual(&vk, &vkCompressed)  && reflect.DeepEqual(&vk, &vkRaw)
-		},
+	properties.Property("VerifyingKey (with commitments) -> writer -> reader -> VerifyingKey should stay constant", prop.ForAll(
+		roundTrip(true),
 		GenG1(),
 		GenG2(),
 	))
@@ -162,8 +131,8 @@ func TestProvingKeySerialization(t *testing.T) {
 	properties := gopter.NewProperties(parameters)
 
 	properties.Property("ProvingKey -> writer -> reader -> ProvingKey should stay constant", prop.ForAll(
-		func(p1 curve.G1Affine, p2 curve.G2Affine) bool {
-			var pk, pkCompressed, pkRaw ProvingKey
+		func(p1 curve.G1Affine, p2 curve.G2Affine, nbCommitment int) bool {
+			var pk ProvingKey
 
 			// create a random pk
 			domain := fft.NewDomain(8)
@@ -189,48 +158,28 @@ func TestProvingKeySerialization(t *testing.T) {
 			pk.NbInfinityA = 1
 			pk.InfinityA = make([]bool, nbWires)
 			pk.InfinityB = make([]bool, nbWires)
-			pk.InfinityA[2] = true 
+			pk.InfinityA[2] = true
 
-			var bufCompressed bytes.Buffer
-			written, err := pk.WriteTo(&bufCompressed)
-			if err != nil {
-				t.Log(err)
-				return false
+			pedersenBasis := make([]curve.G1Affine, nbCommitment)
+			pedersenBases := make([][]curve.G1Affine, nbCommitment)
+			pk.CommitmentKeys = make([]pedersen.ProvingKey, nbCommitment)
+			for i := range pedersenBasis {
+				pedersenBasis[i] = p1
+				pedersenBases[i] = pedersenBasis[:i+1]
+			}
+			{
+			var err error
+				pk.CommitmentKeys, _, err = pedersen.Setup(pedersenBases...)
+				require.NoError(t, err)
 			}
 
-			read, err := pkCompressed.ReadFrom(&bufCompressed)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
+			err := io.RoundTripCheck(&pk, func() any {return new(ProvingKey)})
+			return err == nil 
 
-			if read != written {
-				t.Log("read != written")
-				return false
-			}
-
-			var bufRaw bytes.Buffer
-			written, err = pk.WriteRawTo(&bufRaw)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
-
-			read, err = pkRaw.ReadFrom(&bufRaw)
-			if err != nil {
-				t.Log(err)
-				return false
-			}
-
-			if read != written {
-				t.Log("read raw != written")
-				return false
-			}
-
-			return reflect.DeepEqual(&pk, &pkCompressed) && reflect.DeepEqual(&pk, &pkRaw)
 		},
 		GenG1(),
 		GenG2(),
+		gen.IntRange(0, 2),
 	))
 
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
