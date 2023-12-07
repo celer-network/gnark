@@ -11,10 +11,11 @@ import (
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/frontend"
 	fiatshamir "github.com/consensys/gnark/std/fiat-shamir"
-	"github.com/consensys/gnark/std/hash"
 	"github.com/consensys/gnark/std/polynomial"
 	"github.com/consensys/gnark/test"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/consensys/gnark/std/hash"
 )
 
 func TestGkrVectors(t *testing.T) {
@@ -54,7 +55,8 @@ func generateTestVerifier(path string, options ...option) func(t *testing.T) {
 	return func(t *testing.T) {
 
 		testCase, err := getTestCase(path)
-		assert.NoError(t, err)
+		assert := test.NewAssert(t)
+		assert.NoError(err)
 
 		assignment := &GkrVerifierCircuit{
 			Input:           testCase.Input,
@@ -64,7 +66,7 @@ func generateTestVerifier(path string, options ...option) func(t *testing.T) {
 			TestCaseName:    path,
 		}
 
-		circuit := &GkrVerifierCircuit{
+		validCircuit := &GkrVerifierCircuit{
 			Input:           make([][]frontend.Variable, len(testCase.Input)),
 			Output:          make([][]frontend.Variable, len(testCase.Output)),
 			SerializedProof: make([]frontend.Variable, len(assignment.SerializedProof)),
@@ -72,17 +74,25 @@ func generateTestVerifier(path string, options ...option) func(t *testing.T) {
 			TestCaseName:    path,
 		}
 
-		fillWithBlanks(circuit.Input, len(testCase.Input[0]))
-		fillWithBlanks(circuit.Output, len(testCase.Input[0]))
+		invalidCircuit := &GkrVerifierCircuit{
+			Input:           make([][]frontend.Variable, len(testCase.Input)),
+			Output:          make([][]frontend.Variable, len(testCase.Output)),
+			SerializedProof: make([]frontend.Variable, len(assignment.SerializedProof)),
+			ToFail:          true,
+			TestCaseName:    path,
+		}
+
+		fillWithBlanks(validCircuit.Input, len(testCase.Input[0]))
+		fillWithBlanks(validCircuit.Output, len(testCase.Input[0]))
+		fillWithBlanks(invalidCircuit.Input, len(testCase.Input[0]))
+		fillWithBlanks(invalidCircuit.Output, len(testCase.Input[0]))
 
 		if !opts.noSuccess {
-			test.NewAssert(t).SolvingSucceeded(circuit, assignment, test.WithBackends(backend.GROTH16))
+			assert.CheckCircuit(validCircuit, test.WithBackends(backend.GROTH16), test.WithValidAssignment(assignment))
 		}
 
 		if !opts.noFail {
-			assignment.ToFail = true // TODO: This one doesn't matter right?
-			circuit.ToFail = true
-			test.NewAssert(t).SolvingFailed(circuit, assignment, test.WithBackends(backend.GROTH16))
+			assert.CheckCircuit(invalidCircuit, test.WithBackends(backend.GROTH16), test.WithInvalidAssignment(assignment))
 		}
 	}
 }
@@ -110,7 +120,7 @@ func (c *GkrVerifierCircuit) Define(api frontend.API) error {
 	}
 	assignment := makeInOutAssignment(testCase.Circuit, c.Input, c.Output)
 
-	var hsh hash.Hash
+	var hsh hash.FieldHasher
 	if c.ToFail {
 		hsh = NewMessageCounter(api, 1, 1)
 	} else {
@@ -240,7 +250,7 @@ func (c CircuitInfo) toCircuit() (circuit Circuit, err error) {
 		}
 
 		var found bool
-		if circuit[i].Gate, found = RegisteredGates[wireInfo.Gate]; !found && wireInfo.Gate != "" {
+		if circuit[i].Gate, found = Gates[wireInfo.Gate]; !found && wireInfo.Gate != "" {
 			err = fmt.Errorf("undefined gate \"%s\"", wireInfo.Gate)
 		}
 	}
@@ -251,7 +261,7 @@ func (c CircuitInfo) toCircuit() (circuit Circuit, err error) {
 type _select int
 
 func init() {
-	RegisteredGates["select-input-3"] = _select(2)
+	Gates["select-input-3"] = _select(2)
 }
 
 func (g _select) Evaluate(_ frontend.API, in ...frontend.Variable) frontend.Variable {
@@ -414,7 +424,7 @@ func SliceEqual[T comparable](expected, seen []T) bool {
 
 type HashDescription map[string]interface{}
 
-func HashFromDescription(api frontend.API, d HashDescription) (hash.Hash, error) {
+func HashFromDescription(api frontend.API, d HashDescription) (hash.FieldHasher, error) {
 	if _type, ok := d["type"]; ok {
 		switch _type {
 		case "const":
@@ -456,13 +466,13 @@ func (m *MessageCounter) Reset() {
 	m.state = m.startState
 }
 
-func NewMessageCounter(api frontend.API, startState, step int) hash.Hash {
+func NewMessageCounter(api frontend.API, startState, step int) hash.FieldHasher {
 	transcript := &MessageCounter{startState: int64(startState), state: int64(startState), step: int64(step), api: api}
 	return transcript
 }
 
-func NewMessageCounterGenerator(startState, step int) func(frontend.API) hash.Hash {
-	return func(api frontend.API) hash.Hash {
+func NewMessageCounterGenerator(startState, step int) func(frontend.API) hash.FieldHasher {
+	return func(api frontend.API) hash.FieldHasher {
 		return NewMessageCounter(api, startState, step)
 	}
 }
@@ -475,10 +485,38 @@ func (c *constHashCircuit) Define(api frontend.API) error {
 	hsh := NewMessageCounter(api, 0, 0)
 	hsh.Reset()
 	hsh.Write(c.X)
-	api.AssertIsEqual(hsh.Sum(), 0)
+	sum := hsh.Sum()
+	api.AssertIsEqual(sum, 0)
+	api.AssertIsEqual(api.Mul(c.X, c.X), 1) // ensure we have at least 2 constraints
 	return nil
 }
 
 func TestConstHash(t *testing.T) {
-	test.NewAssert(t).SolvingSucceeded(&constHashCircuit{}, &constHashCircuit{X: 1})
+	test.NewAssert(t).CheckCircuit(
+		&constHashCircuit{},
+
+		test.WithValidAssignment(&constHashCircuit{X: 1}),
+	)
+}
+
+var mimcSnarkTotalCalls = 0
+
+type MiMCCipherGate struct {
+	Ark frontend.Variable
+}
+
+func (m MiMCCipherGate) Evaluate(api frontend.API, input ...frontend.Variable) frontend.Variable {
+	mimcSnarkTotalCalls++
+
+	if len(input) != 2 {
+		panic("mimc has fan-in 2")
+	}
+	sum := api.Add(input[0], input[1], m.Ark)
+
+	sumCubed := api.Mul(sum, sum, sum) // sum^3
+	return api.Mul(sumCubed, sumCubed, sum)
+}
+
+func (m MiMCCipherGate) Degree() int {
+	return 7
 }

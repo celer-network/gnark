@@ -22,24 +22,31 @@ import (
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr/fft"
+	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr/hash_to_field"
+	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr/pedersen"
 	"github.com/consensys/gnark/backend"
+	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/backend/witness"
-	"github.com/consensys/gnark/constraint/bls12-381"
+	"github.com/consensys/gnark/constraint"
+	cs "github.com/consensys/gnark/constraint/bls12-381"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"math/big"
 	"runtime"
 	"time"
+
+	fcs "github.com/consensys/gnark/frontend/cs"
 )
 
 // Proof represents a Groth16 proof that was encoded with a ProvingKey and can be verified
 // with a valid statement and a VerifyingKey
 // Notation follows Figure 4. in DIZK paper https://eprint.iacr.org/2018/691.pdf
 type Proof struct {
-	Ar, Krs                   curve.G1Affine
-	Bs                        curve.G2Affine
-	Commitment, CommitmentPok curve.G1Affine
+	Ar, Krs       curve.G1Affine
+	Bs            curve.G2Affine
+	Commitments   []curve.G1Affine // Pedersen commitments a la https://eprint.iacr.org/2022/1072
+	CommitmentPok curve.G1Affine   // Batched proof of knowledge of the above commitments
 }
 
 // isValid ensures proof elements are in the correct subgroup
@@ -56,40 +63,57 @@ func (proof *Proof) CurveID() ecc.ID {
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("new prover config: %w", err)
+	}
+	if opt.HashToFieldFn == nil {
+		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
 
-	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "none").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 
-	proof := &Proof{}
+	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
+
+	proof := &Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
 
 	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
 
-	if r1cs.CommitmentInfo.Is() {
-		solverOpts = append(solverOpts, solver.OverrideHint(r1cs.CommitmentInfo.HintID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
-			// Perf-TODO: Converting these values to big.Int and back may be a performance bottleneck.
-			// If that is the case, figure out a way to feed the solution vector into this function
-			if len(in) != r1cs.CommitmentInfo.NbCommitted() { // TODO: Remove
-				return fmt.Errorf("unexpected number of committed variables")
-			}
-			values := make([]fr.Element, r1cs.CommitmentInfo.NbPrivateCommitted)
-			nbPublicCommitted := len(in) - len(values)
-			inPrivate := in[nbPublicCommitted:]
-			for i, inI := range inPrivate {
-				values[i].SetBigInt(inI)
-			}
+	privateCommittedValues := make([][]fr.Element, len(commitmentInfo))
 
-			var err error
-			proof.Commitment, proof.CommitmentPok, err = pk.CommitmentKey.Commit(values)
-			if err != nil {
-				return err
-			}
+	// override hints
+	bsb22ID := solver.GetHintID(fcs.Bsb22CommitmentComputePlaceholder)
+	solverOpts = append(solverOpts, solver.OverrideHint(bsb22ID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
+		i := int(in[0].Int64())
+		in = in[1:]
+		privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
+		hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
+		committed := in[+len(hashed):]
+		for j, inJ := range committed {
+			privateCommittedValues[i][j].SetBigInt(inJ)
+		}
 
-			var res fr.Element
-			res, err = solveCommitmentWire(&r1cs.CommitmentInfo, &proof.Commitment, in[:r1cs.CommitmentInfo.NbPublicCommitted()])
-			res.BigInt(out[0])
+		var err error
+		if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
 			return err
-		}))
+		}
+
+		opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
+		hashBts := opt.HashToFieldFn.Sum(nil)
+		opt.HashToFieldFn.Reset()
+		nbBuf := fr.Bytes
+		if opt.HashToFieldFn.Size() < fr.Bytes {
+			nbBuf = opt.HashToFieldFn.Size()
+		}
+		var res fr.Element
+		res.SetBytes(hashBts[:nbBuf])
+		res.BigInt(out[0])
+		return nil
+	}))
+
+	if r1cs.GkrInfo.Is() {
+		var gkrData cs.GkrSolvingData
+		solverOpts = append(solverOpts,
+			solver.OverrideHint(r1cs.GkrInfo.SolveHintID, cs.GkrSolveHint(r1cs.GkrInfo, &gkrData)),
+			solver.OverrideHint(r1cs.GkrInfo.ProveHintID, cs.GkrProveHint(r1cs.GkrInfo.HashName, &gkrData)))
 	}
 
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
@@ -101,6 +125,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	wireValues := []fr.Element(solution.W)
 
 	start := time.Now()
+
+	commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
+	for i := range commitmentInfo {
+		copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
+	}
+
+	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
+		return nil, err
+	}
 
 	// H (witness reduction / FFT part)
 	var h []fr.Element
@@ -202,10 +235,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			chKrs2Done <- err
 		}()
 
-		// filter the wire values if needed;
-		_wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+		// filter the wire values if needed
+		// TODO Perf @Tabaie worst memory allocation offender
+		toRemove := commitmentInfo.GetPrivateCommitted()
+		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		if _, err := krs.MultiExp(pk.G1.K, _wireValues[r1cs.GetNbPublicVariables():], ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
 			chKrsDone <- err
 			return
 		}
@@ -286,26 +322,32 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 }
 
 // if len(toRemove) == 0, returns slice
-// else, returns a new slice without the indexes in toRemove
-// this assumes toRemove indexes are sorted and len(slice) > len(toRemove)
-func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
+// else, returns a new slice without the indexes in toRemove. The first value in the slice is taken as indexes as sliceFirstIndex
+// this assumes len(slice) > len(toRemove)
+// filterHeap modifies toRemove
+func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr.Element) {
 
 	if len(toRemove) == 0 {
 		return slice
 	}
-	r = make([]fr.Element, 0, len(slice)-len(toRemove))
 
-	j := 0
+	heap := utils.IntHeap(toRemove)
+	heap.Heapify()
+
+	r = make([]fr.Element, 0, len(slice))
+
 	// note: we can optimize that for the likely case where len(slice) >>> len(toRemove)
 	for i := 0; i < len(slice); i++ {
-		if j < len(toRemove) && i == toRemove[j] {
-			j++
+		if len(heap) > 0 && i+sliceFirstIndex == heap[0] {
+			for len(heap) > 0 && i+sliceFirstIndex == heap[0] {
+				heap.Pop()
+			}
 			continue
 		}
 		r = append(r, slice[i])
 	}
 
-	return r
+	return
 }
 
 func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {

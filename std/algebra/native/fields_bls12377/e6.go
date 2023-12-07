@@ -122,6 +122,21 @@ func (e *E6) Mul(api frontend.API, e1, e2 E6) *E6 {
 	return e
 }
 
+func (e *E6) Mul0By01(api frontend.API, a0, b0, b1 E2) *E6 {
+
+	var t0, c1 E2
+
+	t0.Mul(api, a0, b0)
+	c1.Add(api, b0, b1)
+	c1.Mul(api, c1, a0).Sub(api, c1, t0)
+
+	e.B0 = t0
+	e.B1 = c1
+	e.B2 = E2{0, 0}
+
+	return e
+}
+
 // MulByFp2 creates a fp6elmt from fp elmts
 // icube is the imaginary elmt to the cube
 func (e *E6) MulByFp2(api frontend.API, e1 E6, e2 E2) *E6 {
@@ -331,6 +346,41 @@ func (e *E6) MulBy01(api frontend.API, c0, c1 E2) *E6 {
 	e.B0 = t0
 	e.B1 = t1
 	e.B2 = t2
+
+	return e
+}
+
+func Mul01By01(api frontend.API, c0, c1, d0, d1 E2) *E6 {
+	var a, b, t0, t1, t2, tmp E2
+
+	a.Mul(api, d0, c0)
+	b.Mul(api, d1, c1)
+	t0.Mul(api, c1, d1)
+	t0.Sub(api, t0, b)
+	t0.MulByNonResidue(api, t0)
+	t0.Add(api, t0, a)
+	t2.Mul(api, c0, d0)
+	t2.Sub(api, t2, a)
+	t2.Add(api, t2, b)
+	t1.Add(api, c0, c1)
+	tmp.Add(api, d0, d1)
+	t1.Mul(api, t1, tmp)
+	t1.Sub(api, t1, a)
+	t1.Sub(api, t1, b)
+
+	return &E6{
+		B0: t0,
+		B1: t1,
+		B2: t2,
+	}
+}
+
+// Select sets e to r1 if b=1, r2 otherwise
+func (e *E6) Select(api frontend.API, b frontend.Variable, r1, r2 E6) *E6 {
+
+	e.B0.Select(api, b, r1.B0, r2.B0)
+	e.B1.Select(api, b, r1.B1, r2.B1)
+	e.B2.Select(api, b, r1.B2, r2.B2)
 
 	return e
 }

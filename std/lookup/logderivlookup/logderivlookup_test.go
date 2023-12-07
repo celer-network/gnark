@@ -7,8 +7,9 @@ import (
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/test"
 )
 
@@ -45,7 +46,48 @@ func TestLookup(t *testing.T) {
 		witness.Queries[i] = q
 		witness.Expected[i] = new(big.Int).Set(witness.Entries[q.Int64()].(*big.Int))
 	}
-	assert.ProverSucceeded(&LookupCircuit{}, &witness,
-		test.WithCurves(ecc.BN254),
-		test.WithBackends(backend.GROTH16, backend.PLONK))
+
+	assert.CheckCircuit(&LookupCircuit{}, test.WithValidAssignment(&witness))
+}
+
+type LookupCircuitLarge struct {
+	Entries           [32000 * 2]frontend.Variable
+	Queries, Expected [32000 * 2]frontend.Variable
+}
+
+func (c *LookupCircuitLarge) Define(api frontend.API) error {
+	t := New(api)
+	for i := range c.Entries {
+		t.Insert(c.Entries[i])
+	}
+	results := make([]frontend.Variable, len(c.Queries))
+	for i := range c.Queries {
+		results[i] = t.Lookup(c.Queries[i])[0]
+	}
+	if len(results) != len(c.Expected) {
+		return fmt.Errorf("length mismatch")
+	}
+	for i := range results {
+		api.AssertIsEqual(results[i], c.Expected[i])
+	}
+	return nil
+}
+
+func BenchmarkCompileManyLookup(b *testing.B) {
+	b.Run("scs", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, &LookupCircuitLarge{})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("r1cs", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &LookupCircuitLarge{})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

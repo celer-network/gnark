@@ -2,11 +2,12 @@ package gkr
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/consensys/gnark/frontend"
 	fiatshamir "github.com/consensys/gnark/std/fiat-shamir"
 	"github.com/consensys/gnark/std/polynomial"
 	"github.com/consensys/gnark/std/sumcheck"
-	"strconv"
 )
 
 // @tabaie TODO: Contains many things copy-pasted from gnark-crypto. Generify somehow?
@@ -198,9 +199,7 @@ func setup(api frontend.API, c Circuit, assignment WireAssignment, transcriptSet
 
 	if transcriptSettings.Transcript == nil {
 		challengeNames := ChallengeNames(o.sorted, o.nbVars, transcriptSettings.Prefix)
-		transcript := fiatshamir.NewTranscript(
-			api, transcriptSettings.Hash, challengeNames...)
-		o.transcript = &transcript
+		o.transcript = fiatshamir.NewTranscript(api, transcriptSettings.Hash, challengeNames)
 		if err = o.transcript.Bind(challengeNames[0], transcriptSettings.BaseChallenges); err != nil {
 			return o, err
 		}
@@ -549,13 +548,22 @@ func (g MulGate) Degree() int {
 type AddGate struct{}
 
 func (a AddGate) Evaluate(api frontend.API, v ...frontend.Variable) frontend.Variable {
-	var rest []frontend.Variable
-	if len(v) >= 2 {
-		rest = v[2:]
+	switch len(v) {
+	case 0:
+		return 0
+	case 1:
+		return v[0]
 	}
+	rest := v[2:]
 	return api.Add(v[0], v[1], rest...)
 }
 
 func (a AddGate) Degree() int {
 	return 1
+}
+
+var Gates = map[string]Gate{
+	"identity": IdentityGate{},
+	"add":      AddGate{},
+	"mul":      MulGate{},
 }

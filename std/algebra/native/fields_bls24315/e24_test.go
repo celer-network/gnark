@@ -58,7 +58,7 @@ func TestAddFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type fp24Sub struct {
@@ -89,7 +89,7 @@ func TestSubFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type fp24Mul struct {
@@ -121,7 +121,7 @@ func TestMulFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type fp24Square struct {
@@ -150,7 +150,7 @@ func TestSquareFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 
 }
 
@@ -190,29 +190,29 @@ func TestFp24CyclotomicSquare(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 
 }
 
-type fp24CycloSquareCompressed struct {
+type fp24CycloSquareKarabina2345 struct {
 	A E24
 	B E24 `gnark:",public"`
 }
 
-func (circuit *fp24CycloSquareCompressed) Define(api frontend.API) error {
+func (circuit *fp24CycloSquareKarabina2345) Define(api frontend.API) error {
 
 	var u, v E24
 	u.Square(api, circuit.A)
-	v.CyclotomicSquareCompressed(api, circuit.A)
-	v.Decompress(api, v)
+	v.CyclotomicSquareKarabina2345(api, circuit.A)
+	v.DecompressKarabina2345(api, v)
 	u.AssertIsEqual(api, v)
 	u.AssertIsEqual(api, circuit.B)
 	return nil
 }
 
-func TestFp24CyclotomicSquareCompressed(t *testing.T) {
+func TestFp24CyclotomicSquareKarabina2345(t *testing.T) {
 
-	var circuit, witness fp24CycloSquareCompressed
+	var circuit, witness fp24CycloSquareKarabina2345
 
 	// witness values
 	var a, b bls24315.E24
@@ -225,14 +225,14 @@ func TestFp24CyclotomicSquareCompressed(t *testing.T) {
 	tmp.Mul(&tmp, &a)
 	a.FrobeniusQuad(&tmp).Mul(&a, &tmp)
 
-	b.CyclotomicSquare(&a)
+	b.CyclotomicSquareCompressed(&a)
 	b.DecompressKarabina(&b)
 	witness.A.Assign(&a)
 	witness.B.Assign(&b)
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 
 }
 
@@ -262,7 +262,7 @@ func TestConjugateFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type e24Div struct {
@@ -291,7 +291,7 @@ func TestDivFp24(t *testing.T) {
 	witness.C.Assign(&c)
 
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&e24Div{}, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&e24Div{}, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type fp24Inverse struct {
@@ -321,7 +321,7 @@ func TestInverseFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 type fp24MulBy034 struct {
@@ -358,7 +358,7 @@ func TestFp24MulBy034(t *testing.T) {
 	witness.W.Assign(&a)
 
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 
 }
 
@@ -402,7 +402,7 @@ func TestFrobeniusFp24(t *testing.T) {
 
 	// cs values
 	assert := test.NewAssert(t)
-	assert.SolvingSucceeded(&circuit, &witness, test.WithCurves(ecc.BW6_633))
+	assert.CheckCircuit(&circuit, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_633))
 }
 
 // benches

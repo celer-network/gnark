@@ -2,6 +2,30 @@ package fields_bls24315
 
 import "github.com/consensys/gnark/frontend"
 
+// Square034 squares a sparse element in Fp24
+func (e *E24) Square034(api frontend.API, x E24) *E24 {
+	var c0, c2, c3 E12
+
+	c0.C0.Sub(api, x.D0.C0, x.D1.C0)
+	c0.C1.Neg(api, x.D1.C1)
+	c0.C2 = E4{E2{0, 0}, E2{0, 0}}
+
+	c3.C0 = x.D0.C0
+	c3.C1.Neg(api, x.D1.C0)
+	c3.C2.Neg(api, x.D1.C1)
+
+	c2.Mul0By01(api, x.D0.C0, x.D1.C0, x.D1.C1)
+	c3.MulBy01(api, c0.C0, c0.C1).Add(api, c3, c2)
+	e.D1.C0.Add(api, c2.C0, c2.C0)
+	e.D1.C1.Add(api, c2.C1, c2.C1)
+
+	e.D0.C0 = c3.C0
+	e.D0.C1.Add(api, c3.C1, c2.C0)
+	e.D0.C2.Add(api, c3.C2, c2.C1)
+
+	return e
+}
+
 // MulBy034 multiplication by sparse element
 func (e *E24) MulBy034(api frontend.API, c3, c4 E4) *E24 {
 
@@ -25,8 +49,8 @@ func (e *E24) MulBy034(api frontend.API, c3, c4 E4) *E24 {
 }
 
 // Mul034By034 multiplication of sparse element (1,0,0,c3,c4,0) by sparse element (1,0,0,d3,d4,0)
-func (e *E24) Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *E24 {
-	var one, tmp, x3, x4, x04, x03, x34 E4
+func Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *[5]E4 {
+	var one, tmp, x00, x3, x4, x04, x03, x34 E4
 	one.SetOne()
 	x3.Mul(api, c3, d3)
 	x4.Mul(api, c4, d4)
@@ -38,15 +62,10 @@ func (e *E24) Mul034By034(api frontend.API, d3, d4, c3, c4 E4) *E24 {
 		Sub(api, x34, x3).
 		Sub(api, x34, x4)
 
-	e.D0.C0.MulByNonResidue(api, x4).
-		Add(api, e.D0.C0, one)
-	e.D0.C1 = x3
-	e.D0.C2 = x34
-	e.D1.C0 = x03
-	e.D1.C1 = x04
-	e.D1.C2.SetZero()
+	x00.MulByNonResidue(api, x4).
+		Add(api, x00, one)
 
-	return e
+	return &[5]E4{x00, x3, x34, x03, x04}
 }
 
 // Expt compute e1**exponent, where the exponent is hardcoded
@@ -59,13 +78,13 @@ func (e *E24) Expt(api frontend.API, x E24, exponent uint64) *E24 {
 
 	res.nSquare(api, 2)
 	res.Mul(api, res, xInv)
-	res.nSquareCompressed(api, 8)
-	res.Decompress(api, res)
+	res.nSquareKarabina2345(api, 8)
+	res.DecompressKarabina2345(api, res)
 	res.Mul(api, res, xInv)
 	res.nSquare(api, 2)
 	res.Mul(api, res, x)
-	res.nSquareCompressed(api, 20)
-	res.Decompress(api, res)
+	res.nSquareKarabina2345(api, 20)
+	res.DecompressKarabina2345(api, res)
 	res.Mul(api, res, xInv)
 	res.Conjugate(api, res)
 

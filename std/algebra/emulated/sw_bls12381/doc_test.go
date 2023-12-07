@@ -23,6 +23,10 @@ func (c *PairCircuit) Define(api frontend.API) error {
 	if err != nil {
 		return fmt.Errorf("new pairing: %w", err)
 	}
+	// Pair method does not check that the points are in the proper groups.
+	pairing.AssertIsOnG1(&c.InG1)
+	pairing.AssertIsOnG2(&c.InG2)
+	// Compute the pairing
 	res, err := pairing.Pair([]*sw_bls12381.G1Affine{&c.InG1}, []*sw_bls12381.G2Affine{&c.InG2})
 	if err != nil {
 		return fmt.Errorf("pair: %w", err)
@@ -49,38 +53,26 @@ func ExamplePairing() {
 	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("compiled")
 	}
 	pk, vk, err := groth16.Setup(ccs)
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("setup done")
 	}
 	secretWitness, err := frontend.NewWitness(&witness, ecc.BN254.ScalarField())
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("secret witness")
 	}
 	publicWitness, err := secretWitness.Public()
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("public witness")
 	}
 	proof, err := groth16.Prove(ccs, pk, secretWitness)
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("proof")
 	}
 	err = groth16.Verify(proof, vk, publicWitness)
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("verify")
 	}
 }
 
