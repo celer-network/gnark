@@ -42,11 +42,12 @@ func TestFull(t *testing.T) {
 		log.Fatalln(err)
 	}
 
-	witness, err := frontend.NewWitness(outerAssignment, field)
+	w, err := frontend.NewWitness(outerAssignment, field)
 	assert.NoError(err)
 	ccs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
 	assert.NoError(err)
-	pubWitness, err := witness.Public()
+	fmt.Printf("254 constraints: %d", ccs.GetNbConstraints())
+	pubWitness, err := w.Public()
 	assert.NoError(err)
 
 	pk, vk, err := groth16.Setup(ccs)
@@ -54,7 +55,7 @@ func TestFull(t *testing.T) {
 		log.Fatalln(err)
 	}
 
-	aggProof, err := groth16.Prove(ccs, pk, witness)
+	aggProof, err := groth16.Prove(ccs, pk, w)
 	assert.NoError(err)
 	err = groth16.Verify(aggProof, vk, pubWitness)
 	assert.NoError(err)
@@ -91,6 +92,7 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	assert.NoError(err)
 	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
 	assert.NoError(err)
+	fmt.Printf("254 constraints: %d", aggCcs.GetNbConstraints())
 	aggPubWitness, err := aggWitness.Public()
 	assert.NoError(err)
 
