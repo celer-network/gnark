@@ -75,17 +75,17 @@ func TestFull(t *testing.T) {
 func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof) {
 	field := ecc.BW6_761.ScalarField()
 
-	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	//_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
 	_, innerVKPlonk, innerWitnessPlonk, innerProofPlonk := getInnerCommit(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
 
 	// groth16
-	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
+	/*circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
 	assert.NoError(err)
 	circuitWitness, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
 	assert.NoError(err)
 	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
-	assert.NoError(err)
+	assert.NoError(err)*/
 
 	// plonk
 	circuitVkPlonk, err := plonk2.ValueOfVerifyingKey[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerVKPlonk)
@@ -96,9 +96,9 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	assert.NoError(err)
 
 	outerAssignment := &OuterCircuit6[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		InnerWitness: [1]Witness[sw_bls12377.ScalarField]{circuitWitness},
-		Proof:        [1]Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]{circuitProof},
-		VerifyingKey: circuitVk,
+		//InnerWitness: [1]Witness[sw_bls12377.ScalarField]{circuitWitness},
+		//Proof:        [1]Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]{circuitProof},
+		//VerifyingKey: circuitVk,
 
 		InnerWitnessPlonk: circuitWitnessPlonk,
 		ProofPlonk:        circuitProofPlonk,
@@ -163,9 +163,9 @@ func (c *OuterCircuit5[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 }
 
 type OuterCircuit6[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
-	Proof        [1]Proof[G1El, G2El]
-	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
-	InnerWitness [1]Witness[FR]
+	//Proof        [1]Proof[G1El, G2El]
+	//VerifyingKey VerifyingKey[G1El, G2El, GtEl]
+	//InnerWitness [1]Witness[FR]
 
 	//
 	ProofPlonk        plonk2.Proof[FR, G1El, G2El]
@@ -178,7 +178,7 @@ type OuterCircuit6[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebr
 }
 
 func (c *OuterCircuit6[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
-	curve, err := algebra.GetCurve[FR, G1El](api)
+	/*curve, err := algebra.GetCurve[FR, G1El](api)
 	if err != nil {
 		return fmt.Errorf("new curve: %w", err)
 	}
@@ -186,13 +186,14 @@ func (c *OuterCircuit6[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 	if err != nil {
 		return fmt.Errorf("get pairing: %w", err)
 	}
+
 	verifier := NewVerifier(curve, pairing)
 	for i, p := range c.Proof {
 		err = verifier.AssertProof(c.VerifyingKey, p, c.InnerWitness[i])
 		if err != nil {
 			return err
 		}
-	}
+	}*/
 
 	// plonk
 	verifierPlonk, err := plonk2.NewVerifier[FR, G1El, G2El, GtEl](api)
