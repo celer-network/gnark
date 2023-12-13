@@ -3,9 +3,11 @@ package groth16
 import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	fr_bw6761 "github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
 	"github.com/consensys/gnark/backend/groth16"
 	groth162 "github.com/consensys/gnark/backend/groth16/bn254"
 	groth163 "github.com/consensys/gnark/backend/groth16/bw6-761"
+	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
@@ -26,7 +28,7 @@ import (
 
 func TestFull(t *testing.T) {
 	assert := test.NewAssert(t)
-	_, innerVK, innerWitness, innerProof := getBLS12InBW6_5(assert)
+	_, innerVK, innerWitness, innerProof, commitPubFr := getBLS12InBW6_5(assert)
 	fmt.Printf("getBLS12InBW6 done \n")
 	circuitVk, err := ValueOfVerifyingKey[sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl](innerVK)
 	assert.NoError(err)
@@ -35,10 +37,15 @@ func TestFull(t *testing.T) {
 	circuitProof, err := ValueOfProof[sw_bw6761.G1Affine, sw_bw6761.G2Affine](innerProof)
 	assert.NoError(err)
 
+	circuitCommitment, err := ValueOfProofCommitment[sw_bw6761.G1Affine](innerProof)
+	assert.NoError(err)
+	circuitWitness.Public = append(circuitWitness.Public, sw_bw6761.NewScalar(commitPubFr))
+
 	outerAssignment := &OuterCircuit5[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]{
 		InnerWitness: circuitWitness,
 		Proof:        circuitProof,
 		VerifyingKey: circuitVk,
+		Commitment:   circuitCommitment,
 		N:            1,
 		Q:            2,
 	}
@@ -72,7 +79,7 @@ func TestFull(t *testing.T) {
 	fmt.Println("bn254 done")
 }
 
-func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof) {
+func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof, fr_bw6761.Element) {
 	field := ecc.BW6_761.ScalarField()
 
 	//_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
@@ -131,7 +138,18 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	err = groth16.Verify(aggProof, vk, aggPubWitness)
 	assert.NoError(err)
 	fmt.Printf("bw761 commitment: %d \n", len(aggProof.(*groth163.Proof).Commitments))
-	return aggCcs, vk, aggPubWitness, aggProof
+
+	w, ok := aggPubWitness.Vector().(fr_bw6761.Vector)
+	if !ok {
+		log.Fatalln(err)
+	}
+	commitPub, err := groth163.VerifyBW761ExportCommitPub(aggProof.(*groth16_bw6761.Proof), vk.(*groth16_bw6761.VerifyingKey), w)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Printf("%+v", commitPub)
+
+	return aggCcs, vk, aggPubWitness, aggProof, commitPub
 }
 
 // for emulated outer circuit
@@ -139,8 +157,11 @@ type OuterCircuit5[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebr
 	Proof        Proof[G1El, G2El]
 	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
 	InnerWitness Witness[FR]
-	N            frontend.Variable `gnark:",public"`
-	Q            frontend.Variable `gnark:",public"`
+
+	Commitment G1El
+
+	N frontend.Variable `gnark:",public"`
+	Q frontend.Variable `gnark:",public"`
 }
 
 func (c *OuterCircuit5[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
@@ -153,7 +174,7 @@ func (c *OuterCircuit5[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+	err = verifier.AssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitment, c.InnerWitness)
 	if err != nil {
 		return fmt.Errorf("get pairing: %w", err)
 	}

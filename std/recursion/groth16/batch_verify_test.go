@@ -321,6 +321,9 @@ func (c *OuterCircuit3[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 	}
 	verifier := NewVerifier(curve, pairing)
 	err = verifier.AssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitment, c.InnerWitness)
+	if err != nil {
+		return err
+	}
 	api.AssertIsEqual(c.N, 1)
 	api.AssertIsEqual(c.Q, 2)
 	return err
