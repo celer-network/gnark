@@ -160,13 +160,11 @@ func (c *OuterCircuit6[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof[0], c.InnerWitness[0])
-	if err != nil {
-		return err
-	}
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof[1], c.InnerWitness[1])
-	if err != nil {
-		return err
+	for i, p := range c.Proof {
+		err = verifier.AssertProof(c.VerifyingKey, p, c.InnerWitness[i])
+		if err != nil {
+			return err
+		}
 	}
 	api.AssertIsEqual(c.N, 1)
 	api.AssertIsEqual(c.Q, 2)
