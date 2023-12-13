@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	groth162 "github.com/consensys/gnark/backend/groth16/bn254"
+	groth163 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
@@ -46,7 +48,7 @@ func TestFull(t *testing.T) {
 	assert.NoError(err)
 	ccs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
 	assert.NoError(err)
-	fmt.Printf("254 constraints: %d", ccs.GetNbConstraints())
+	fmt.Printf("254 constraints: %d \n", ccs.GetNbConstraints())
 	pubWitness, err := w.Public()
 	assert.NoError(err)
 
@@ -55,9 +57,12 @@ func TestFull(t *testing.T) {
 		log.Fatalln(err)
 	}
 
-	aggProof, err := groth16.Prove(ccs, pk, w)
+	proof, err := groth16.Prove(ccs, pk, w)
 	assert.NoError(err)
-	err = groth16.Verify(aggProof, vk, pubWitness)
+	err = groth16.Verify(proof, vk, pubWitness)
+
+	fmt.Printf("bn254 commitment: %d \n", len(proof.(*groth162.Proof).Commitments))
+
 	assert.NoError(err)
 	fmt.Println("bn254 done")
 }
@@ -92,7 +97,7 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	assert.NoError(err)
 	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
 	assert.NoError(err)
-	fmt.Printf("254 constraints: %d", aggCcs.GetNbConstraints())
+	fmt.Printf("bw761 constraints: %d \n", aggCcs.GetNbConstraints())
 	aggPubWitness, err := aggWitness.Public()
 	assert.NoError(err)
 
@@ -105,6 +110,7 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	assert.NoError(err)
 	err = groth16.Verify(aggProof, vk, aggPubWitness)
 	assert.NoError(err)
+	fmt.Printf("bw761 commitment: %d \n", len(aggProof.(*groth163.Proof).Commitments))
 	return aggCcs, vk, aggPubWitness, aggProof
 }
 
