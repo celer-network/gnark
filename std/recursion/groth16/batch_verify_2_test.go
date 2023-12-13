@@ -6,16 +6,21 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	groth162 "github.com/consensys/gnark/backend/groth16/bn254"
 	groth163 "github.com/consensys/gnark/backend/groth16/bw6-761"
+	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/std/algebra"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_bw6761"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
 	"github.com/consensys/gnark/std/math/emulated"
+	plonk2 "github.com/consensys/gnark/std/recursion/plonk"
 	"github.com/consensys/gnark/test"
+	"github.com/consensys/gnark/test/unsafekzg"
 	"log"
+	"math/big"
 	"testing"
 )
 
@@ -71,8 +76,9 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	field := ecc.BW6_761.ScalarField()
 
 	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	_, innerVKPlonk, innerWitnessPlonk, innerProofPlonk := getInnerCommit(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
 
-	// outer proof
+	// outer proof, groth16
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
 	assert.NoError(err)
 	circuitWitness, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
@@ -80,12 +86,25 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
 	assert.NoError(err)
 
+	// plonk
+	circuitVkPlonk, err := plonk2.ValueOfVerifyingKey[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerVKPlonk)
+	assert.NoError(err)
+	circuitWitnessPlonk, err := plonk2.ValueOfWitness[sw_bls12377.ScalarField](innerWitnessPlonk)
+	assert.NoError(err)
+	circuitProofPlonk, err := plonk2.ValueOfProof[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProofPlonk)
+	assert.NoError(err)
+
 	outerAssignment := &OuterCircuit6[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: [10]Witness[sw_bls12377.ScalarField]{circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness},
 		Proof:        [10]Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]{circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof},
 		VerifyingKey: circuitVk,
-		N:            1,
-		Q:            2,
+
+		InnerWitnessPlonk: circuitWitnessPlonk,
+		ProofPlonk:        circuitProofPlonk,
+		VerifyingKeyPlonk: circuitVkPlonk,
+
+		N: 1,
+		Q: 2,
 	}
 
 	err = test.IsSolved(outerAssignment, outerAssignment, ecc.BW6_761.ScalarField())
@@ -146,8 +165,15 @@ type OuterCircuit6[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebr
 	Proof        [10]Proof[G1El, G2El]
 	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
 	InnerWitness [10]Witness[FR]
-	N            frontend.Variable `gnark:",public"`
-	Q            frontend.Variable `gnark:",public"`
+
+	//
+	ProofPlonk        plonk2.Proof[FR, G1El, G2El]
+	VerifyingKeyPlonk plonk2.VerifyingKey[FR, G1El, G2El]
+	InnerWitnessPlonk plonk2.Witness[FR]
+	//
+
+	N frontend.Variable `gnark:",public"`
+	Q frontend.Variable `gnark:",public"`
 }
 
 func (c *OuterCircuit6[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
@@ -166,7 +192,71 @@ func (c *OuterCircuit6[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 			return err
 		}
 	}
+
+	// plonk
+	verifierPlonk, err := plonk2.NewVerifier[FR, G1El, G2El, GtEl](api)
+	if err != nil {
+		return fmt.Errorf("new verifier: %w", err)
+	}
+	err = verifierPlonk.AssertProof(c.VerifyingKeyPlonk, c.ProofPlonk, c.InnerWitnessPlonk)
+	if err != nil {
+		return err
+	}
+
 	api.AssertIsEqual(c.N, 1)
 	api.AssertIsEqual(c.Q, 2)
 	return err
+}
+
+func getInnerCommit(assert *test.Assert, field, outer *big.Int) (constraint.ConstraintSystem, plonk.VerifyingKey, witness.Witness, plonk.Proof) {
+
+	innerCcs, err := frontend.Compile(field, scs.NewBuilder, &InnerCircuitCommit{})
+	assert.NoError(err)
+
+	srs, srsLagrange, err := unsafekzg.NewSRS(innerCcs)
+	assert.NoError(err)
+
+	innerPK, innerVK, err := plonk.Setup(innerCcs, srs, srsLagrange)
+	assert.NoError(err)
+
+	// inner proof
+	innerAssignment := &InnerCircuitCommit{
+		P: 3,
+		Q: 5,
+		N: 15,
+	}
+	innerWitness, err := frontend.NewWitness(innerAssignment, field)
+	assert.NoError(err)
+	innerProof, err := plonk.Prove(innerCcs, innerPK, innerWitness, plonk2.GetNativeProverOptions(outer, field))
+
+	assert.NoError(err)
+	innerPubWitness, err := innerWitness.Public()
+	assert.NoError(err)
+	err = plonk.Verify(innerProof, innerVK, innerPubWitness, plonk2.GetNativeVerifierOptions(outer, field))
+
+	assert.NoError(err)
+	return innerCcs, innerVK, innerPubWitness, innerProof
+}
+
+type InnerCircuitCommit struct {
+	P, Q frontend.Variable
+	N    frontend.Variable `gnark:",public"`
+}
+
+func (c *InnerCircuitCommit) Define(api frontend.API) error {
+
+	x := api.Mul(c.P, c.P)
+	y := api.Mul(c.Q, c.Q)
+	z := api.Add(x, y)
+
+	committer, ok := api.(frontend.Committer)
+	if !ok {
+		return fmt.Errorf("builder does not implement frontend.Committer")
+	}
+	u, err := committer.Commit(x, z)
+	if err != nil {
+		return err
+	}
+	api.AssertIsDifferent(u, c.N)
+	return nil
 }
