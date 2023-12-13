@@ -78,12 +78,12 @@ func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.Ve
 	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
 	assert.NoError(err)
 
-	outerCircuit := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
+	/*outerCircuit := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: PlaceholderWitness[sw_bls12377.ScalarField](innerCcs),
 		VerifyingKey: PlaceholderVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerCcs),
 		N:            1,
 		Q:            2,
-	}
+	}*/
 	outerAssignment := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: circuitWitness,
 		Proof:        circuitProof,
@@ -101,7 +101,7 @@ func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.Ve
 
 	aggWitness, err := frontend.NewWitness(outerAssignment, field)
 	assert.NoError(err)
-	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerCircuit)
+	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
 	assert.NoError(err)
 	aggPubWitness, err := aggWitness.Public()
 	assert.NoError(err)
