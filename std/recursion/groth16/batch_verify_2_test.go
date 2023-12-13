@@ -77,7 +77,7 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 
 	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
-	_, innerVKPlonk, innerWitnessPlonk, innerProofPlonk := getInnerWoCommit(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
+	_, innerVKPlonk, innerWitnessPlonk, innerProofPlonk := getInnerCommit(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
 
 	// groth16
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)

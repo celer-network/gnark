@@ -2,14 +2,18 @@ package plonk
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend/groth16"
+	groth16_761 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/std/algebra"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_bw6761"
@@ -237,4 +241,51 @@ func TestBW6InBN254Commit(t *testing.T) {
 	}
 	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+}
+
+func TestBLS12InBW6CommitWith761Groth16(t *testing.T) {
+	assert := test.NewAssert(t)
+	_, innerVK, innerWitness, innerProof := getInnerCommit(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
+
+	// outer proof
+	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerVK)
+	assert.NoError(err)
+	circuitWitness, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
+	assert.NoError(err)
+	circuitProof, err := ValueOfProof[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
+	assert.NoError(err)
+
+	outerAssignment := &OuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
+		InnerWitness: circuitWitness,
+		Proof:        circuitProof,
+		VerifyingKey: circuitVk,
+	}
+
+	field := ecc.BW6_761.ScalarField()
+	err = test.IsSolved(outerAssignment, outerAssignment, field)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	w, err := frontend.NewWitness(outerAssignment, field)
+	assert.NoError(err)
+	ccs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
+	assert.NoError(err)
+	fmt.Printf("bw761 constraints: %d \n", ccs.GetNbConstraints())
+	pubWitness, err := w.Public()
+	assert.NoError(err)
+
+	pk, vk, err := groth16.Setup(ccs)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	proof, err := groth16.Prove(ccs, pk, w)
+	assert.NoError(err)
+	err = groth16.Verify(proof, vk, pubWitness)
+
+	fmt.Printf("bw6761 commitment: %d \n", len(proof.(*groth16_761.Proof).Commitments))
+
+	assert.NoError(err)
+	fmt.Println("bw6761 done")
 }
