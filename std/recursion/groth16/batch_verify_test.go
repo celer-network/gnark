@@ -68,7 +68,7 @@ func computeBn254(assert *test.Assert) {
 func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof, fr_bw6761.Element) {
 	field := ecc.BW6_761.ScalarField()
 
-	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
@@ -78,12 +78,12 @@ func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.Ve
 	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
 	assert.NoError(err)
 
-	/*outerCircuit := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
+	outerCircuit := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: PlaceholderWitness[sw_bls12377.ScalarField](innerCcs),
 		VerifyingKey: PlaceholderVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerCcs),
 		N:            1,
 		Q:            2,
-	}*/
+	}
 	outerAssignment := &OuterCircuit2[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: circuitWitness,
 		Proof:        circuitProof,
@@ -92,16 +92,16 @@ func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.Ve
 		Q:            2,
 	}
 
-	/*err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
+	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
 	if err != nil {
 		log.Fatalln(err)
-	}*/
+	}
 
 	//assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BW6_761))
 
 	aggWitness, err := frontend.NewWitness(outerAssignment, field)
 	assert.NoError(err)
-	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerAssignment)
+	aggCcs, err := frontend.Compile(field, r1cs.NewBuilder, outerCircuit)
 	assert.NoError(err)
 	aggPubWitness, err := aggWitness.Public()
 	assert.NoError(err)

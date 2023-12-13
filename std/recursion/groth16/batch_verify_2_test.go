@@ -31,8 +31,8 @@ func TestFull(t *testing.T) {
 	assert.NoError(err)
 
 	outerAssignment := &OuterCircuit5[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]{
-		InnerWitness: circuitWitness,
-		Proof:        circuitProof,
+		InnerWitness: [2]Witness[sw_bw6761.ScalarField]{circuitWitness, circuitWitness},
+		Proof:        [2]Proof[sw_bw6761.G1Affine, sw_bw6761.G2Affine]{circuitProof, circuitProof},
 		VerifyingKey: circuitVk,
 		N:            1,
 		Q:            2,
@@ -116,9 +116,9 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 
 // for emulated outer circuit
 type OuterCircuit5[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
-	Proof        Proof[G1El, G2El]
+	Proof        [2]Proof[G1El, G2El]
 	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
-	InnerWitness Witness[FR]
+	InnerWitness [2]Witness[FR]
 	N            frontend.Variable `gnark:",public"`
 	Q            frontend.Variable `gnark:",public"`
 }
@@ -133,7 +133,14 @@ func (c *OuterCircuit5[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+	err = verifier.AssertProof(c.VerifyingKey, c.Proof[0], c.InnerWitness[0])
+	if err != nil {
+		return fmt.Errorf("get pairing: %w", err)
+	}
+	err = verifier.AssertProof(c.VerifyingKey, c.Proof[1], c.InnerWitness[1])
+	if err != nil {
+		return fmt.Errorf("get pairing: %w", err)
+	}
 	api.AssertIsEqual(c.N, 1)
 	api.AssertIsEqual(c.Q, 2)
 	return err
