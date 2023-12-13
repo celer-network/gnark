@@ -90,6 +90,24 @@ func ValueOfProof[G1El algebra.G1ElementT, G2El algebra.G2ElementT](proof groth1
 	return ret, nil
 }
 
+// ValueOfProofCommitment returns the typed witness of the native proof. It returns an
+// error if there is a mismatch between the type parameters and the provided
+// native proof.
+func ValueOfProofCommitment[G1El algebra.G1ElementT](proof groth16.Proof) (G1El, error) {
+	var ret G1El
+	switch ar := any(&ret).(type) {
+	case *sw_bw6761.G1Affine:
+		tProof, ok := proof.(*groth16backend_bw6761.Proof)
+		if !ok {
+			return ret, fmt.Errorf("expected bls24315.Proof, got %T", proof)
+		}
+		*ar = sw_bw6761.NewG1Affine(tProof.Commitments[0])
+	default:
+		return ret, fmt.Errorf("unknown parametric type combination")
+	}
+	return ret, nil
+}
+
 // VerifyingKey is a typed Groth16 verifying key for checking SNARK proofs. For
 // witness creation use the method [ValueOfVerifyingKey] and for stub
 // placeholder use [PlaceholderVerifyingKey].
@@ -464,6 +482,30 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProof(vk VerifyingKey[G1El, G2El,
 		return fmt.Errorf("multi scalar mul: %w", err)
 	}
 	kSum = v.curve.Add(kSum, &vk.G1.K[0])
+	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar}, []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs})
+	if err != nil {
+		return fmt.Errorf("pairing: %w", err)
+	}
+	v.pairing.AssertIsEqual(pairing, &vk.E)
+	return nil
+}
+
+func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], commitment G1El, witness Witness[FR]) error {
+	inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
+	for i := range inP {
+		inP[i] = &vk.G1.K[i+1]
+	}
+	fmt.Printf("witness.Public %d inP %d \n", len(witness.Public), len(inP))
+	inS := make([]*emulated.Element[FR], len(witness.Public))
+	for i := range inS {
+		inS[i] = &witness.Public[i]
+	}
+	kSum, err := v.curve.MultiScalarMul(inP, inS)
+	if err != nil {
+		return fmt.Errorf("multi scalar mul: %w", err)
+	}
+	kSum = v.curve.Add(kSum, &vk.G1.K[0])
+	kSum = v.curve.Add(kSum, &commitment)
 	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar}, []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs})
 	if err != nil {
 		return fmt.Errorf("pairing: %w", err)
