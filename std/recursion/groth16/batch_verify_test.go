@@ -68,7 +68,7 @@ func computeBn254(assert *test.Assert) {
 func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof, fr_bw6761.Element) {
 	field := ecc.BW6_761.ScalarField()
 
-	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
