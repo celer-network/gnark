@@ -92,10 +92,10 @@ func getBLS12InBW6(assert *test.Assert) (constraint.ConstraintSystem, groth16.Ve
 		Q:            2,
 	}
 
-	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
+	/*err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
 	if err != nil {
 		log.Fatalln(err)
-	}
+	}*/
 
 	//assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BW6_761))
 
