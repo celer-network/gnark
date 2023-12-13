@@ -81,8 +81,8 @@ func getBLS12InBW6_5(assert *test.Assert) (constraint.ConstraintSystem, groth16.
 	assert.NoError(err)
 
 	outerAssignment := &OuterCircuit6[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		InnerWitness: [2]Witness[sw_bls12377.ScalarField]{circuitWitness, circuitWitness},
-		Proof:        [2]Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]{circuitProof, circuitProof},
+		InnerWitness: [10]Witness[sw_bls12377.ScalarField]{circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness, circuitWitness},
+		Proof:        [10]Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]{circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof, circuitProof},
 		VerifyingKey: circuitVk,
 		N:            1,
 		Q:            2,
@@ -143,9 +143,9 @@ func (c *OuterCircuit5[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 }
 
 type OuterCircuit6[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
-	Proof        [2]Proof[G1El, G2El]
+	Proof        [10]Proof[G1El, G2El]
 	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
-	InnerWitness [2]Witness[FR]
+	InnerWitness [10]Witness[FR]
 	N            frontend.Variable `gnark:",public"`
 	Q            frontend.Variable `gnark:",public"`
 }
