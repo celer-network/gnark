@@ -140,6 +140,108 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...bac
 	return nil
 }
 
+func VerifyBW761ExportCommitPub(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...backend.VerifierOption) (fr.Element, error) {
+	commitPub := fr.Element{}
+	opt, err := backend.NewVerifierConfig(opts...)
+	if err != nil {
+		return commitPub, fmt.Errorf("new verifier config: %w", err)
+	}
+	if opt.HashToFieldFn == nil {
+		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
+	}
+
+	nbPublicVars := len(vk.G1.K) - len(vk.PublicAndCommitmentCommitted)
+
+	if len(publicWitness) != nbPublicVars-1 {
+		return commitPub, fmt.Errorf("invalid witness size, got %d, expected %d (public - ONE_WIRE)", len(publicWitness), len(vk.G1.K)-1)
+	}
+	log := logger.Logger().With().Str("curve", vk.CurveID().String()).Str("backend", "groth16").Logger()
+	start := time.Now()
+
+	// check that the points in the proof are in the correct subgroup
+	if !proof.isValid() {
+		return commitPub, errCorrectSubgroupCheckFailed
+	}
+
+	var doubleML curve.GT
+	chDone := make(chan error, 1)
+
+	// compute (eKrsδ, eArBs)
+	go func() {
+		var errML error
+		doubleML, errML = curve.MillerLoop([]curve.G1Affine{proof.Krs, proof.Ar}, []curve.G2Affine{vk.G2.deltaNeg, proof.Bs})
+		chDone <- errML
+		close(chDone)
+	}()
+
+	maxNbPublicCommitted := 0
+	for _, s := range vk.PublicAndCommitmentCommitted { // iterate over commitments
+		maxNbPublicCommitted = utils.Max(maxNbPublicCommitted, len(s))
+	}
+	commitmentsSerialized := make([]byte, len(vk.PublicAndCommitmentCommitted)*fr.Bytes)
+	commitmentPrehashSerialized := make([]byte, curve.SizeOfG1AffineUncompressed+maxNbPublicCommitted*fr.Bytes)
+	for i := range vk.PublicAndCommitmentCommitted { // solveCommitmentWire
+		copy(commitmentPrehashSerialized, proof.Commitments[i].Marshal())
+		offset := curve.SizeOfG1AffineUncompressed
+		for j := range vk.PublicAndCommitmentCommitted[i] {
+			copy(commitmentPrehashSerialized[offset:], publicWitness[vk.PublicAndCommitmentCommitted[i][j]-1].Marshal())
+			offset += fr.Bytes
+		}
+		opt.HashToFieldFn.Write(commitmentPrehashSerialized[:offset])
+		hashBts := opt.HashToFieldFn.Sum(nil)
+		opt.HashToFieldFn.Reset()
+		nbBuf := fr.Bytes
+		if opt.HashToFieldFn.Size() < fr.Bytes {
+			nbBuf = opt.HashToFieldFn.Size()
+		}
+		var res fr.Element
+		res.SetBytes(hashBts[:nbBuf])
+		publicWitness = append(publicWitness, res)
+		commitPub = res
+		copy(commitmentsSerialized[i*fr.Bytes:], res.Marshal())
+	}
+
+	if folded, err := pedersen.FoldCommitments(proof.Commitments, commitmentsSerialized); err != nil {
+		return commitPub, err
+	} else {
+		if err = vk.CommitmentKey.Verify(folded, proof.CommitmentPok); err != nil {
+			return commitPub, err
+		}
+	}
+
+	// compute e(Σx.[Kvk(t)]1, -[γ]2)
+	var kSum curve.G1Jac
+	if _, err := kSum.MultiExp(vk.G1.K[1:], publicWitness, ecc.MultiExpConfig{}); err != nil {
+		return commitPub, err
+	}
+	kSum.AddMixed(&vk.G1.K[0])
+
+	for i := range proof.Commitments {
+		kSum.AddMixed(&proof.Commitments[i])
+	}
+
+	var kSumAff curve.G1Affine
+	kSumAff.FromJacobian(&kSum)
+
+	right, err := curve.MillerLoop([]curve.G1Affine{kSumAff}, []curve.G2Affine{vk.G2.gammaNeg})
+	if err != nil {
+		return commitPub, err
+	}
+
+	// wait for (eKrsδ, eArBs)
+	if err := <-chDone; err != nil {
+		return commitPub, err
+	}
+
+	right = curve.FinalExponentiation(&right, &doubleML)
+	if !vk.e.Equal(&right) {
+		return commitPub, errPairingCheckFailed
+	}
+
+	log.Debug().Dur("took", time.Since(start)).Msg("verifier done")
+	return commitPub, nil
+}
+
 // ExportSolidity writes a solidity Verifier contract on provided writer.
 // This is an experimental feature and gnark solidity generator as not been thoroughly tested.
 //
