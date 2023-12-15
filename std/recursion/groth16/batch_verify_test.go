@@ -62,6 +62,11 @@ func computeBn254(assert *test.Assert) {
 		Q:            2,
 	}
 
+	pWitness, err := frontend.NewWitness(outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+
+	fmt.Printf("witness done")
+
 	err = test.IsSolved(outerAssignment, outerAssignment, ecc.BN254.ScalarField())
 	if err != nil {
 		log.Fatalln(err)
@@ -78,14 +83,12 @@ func computeBn254(assert *test.Assert) {
 	ppk, pvk, err := plonk.Setup(pccs, srs, srsLagrange)
 	assert.NoError(err)
 
-	pWitness, err := frontend.NewWitness(outerAssignment, ecc.BN254.ScalarField())
-	assert.NoError(err)
-	pProof, err := plonk.Prove(pccs, ppk, pWitness, plonk2.GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BLS12_377.ScalarField()))
+	pProof, err := plonk.Prove(pccs, ppk, pWitness, plonk2.GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BW6_761.ScalarField()))
 
 	assert.NoError(err)
 	pPubWitness, err := pWitness.Public()
 	assert.NoError(err)
-	err = plonk.Verify(pProof, pvk, pPubWitness, plonk2.GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BLS12_377.ScalarField()))
+	err = plonk.Verify(pProof, pvk, pPubWitness, plonk2.GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BW6_761.ScalarField()))
 	assert.NoError(err)
 	//assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BN254))
 }
