@@ -13,6 +13,7 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/frontend/cs/scs"
+	"github.com/consensys/gnark/logger"
 	"github.com/consensys/gnark/std/algebra"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_bw6761"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
@@ -20,6 +21,7 @@ import (
 	plonk2 "github.com/consensys/gnark/std/recursion/plonk"
 	"github.com/consensys/gnark/test"
 	"github.com/consensys/gnark/test/unsafekzg"
+	"github.com/rs/zerolog"
 	"log"
 	"os"
 	"testing"
@@ -27,6 +29,9 @@ import (
 )
 
 func Test377To761To254(t *testing.T) {
+	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}
+	lo := zerolog.New(output).With().Timestamp().Logger()
+	logger.Set(lo)
 	assert := test.NewAssert(t)
 	computeBn254(assert)
 }
