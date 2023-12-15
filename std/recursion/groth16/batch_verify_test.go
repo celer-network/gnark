@@ -7,15 +7,19 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	groth162 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
+	"github.com/consensys/gnark/backend/plonk"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/std/algebra"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_bw6761"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
 	"github.com/consensys/gnark/std/math/emulated"
+	plonk2 "github.com/consensys/gnark/std/recursion/plonk"
 	"github.com/consensys/gnark/test"
+	"github.com/consensys/gnark/test/unsafekzg"
 	"log"
 	"os"
 	"testing"
@@ -42,13 +46,13 @@ func computeBn254(assert *test.Assert) {
 
 	circuitWitness.Public = append(circuitWitness.Public, sw_bw6761.NewScalar(commitPubFr))
 
-	outerCircuit := &OuterCircuit3[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]{
+	/*outerCircuit := &OuterCircuit3[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]{
 		InnerWitness: circuitWitness,
 		VerifyingKey: circuitVk,
 		Commitment:   circuitCommitment,
 		N:            1,
 		Q:            2,
-	}
+	}*/
 	outerAssignment := &OuterCircuit3[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]{
 		InnerWitness: circuitWitness,
 		Proof:        circuitProof,
@@ -58,10 +62,31 @@ func computeBn254(assert *test.Assert) {
 		Q:            2,
 	}
 
-	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
+	err = test.IsSolved(outerAssignment, outerAssignment, ecc.BN254.ScalarField())
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	// test plonk
+	pccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, outerAssignment)
+	assert.NoError(err)
+	fmt.Printf("ccs: %d", pccs.GetNbConstraints())
+
+	srs, srsLagrange, err := unsafekzg.NewSRS(pccs)
+	assert.NoError(err)
+
+	ppk, pvk, err := plonk.Setup(pccs, srs, srsLagrange)
+	assert.NoError(err)
+
+	pWitness, err := frontend.NewWitness(outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+	pProof, err := plonk.Prove(pccs, ppk, pWitness, plonk2.GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BLS12_377.ScalarField()))
+
+	assert.NoError(err)
+	pPubWitness, err := pWitness.Public()
+	assert.NoError(err)
+	err = plonk.Verify(pProof, pvk, pPubWitness, plonk2.GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BLS12_377.ScalarField()))
+	assert.NoError(err)
 	//assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BN254))
 }
 
