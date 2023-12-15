@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 	"testing"
+	"time"
 )
 
 func Test377To761To254(t *testing.T) {
@@ -83,8 +84,9 @@ func computeBn254(assert *test.Assert) {
 	ppk, pvk, err := plonk.Setup(pccs, srs, srsLagrange)
 	assert.NoError(err)
 
+	fmt.Printf("start prove %v", time.Now())
 	pProof, err := plonk.Prove(pccs, ppk, pWitness, plonk2.GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BW6_761.ScalarField()))
-
+	fmt.Printf("end prove %v", time.Now())
 	assert.NoError(err)
 	pPubWitness, err := pWitness.Public()
 	assert.NoError(err)
