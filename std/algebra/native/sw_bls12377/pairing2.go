@@ -234,6 +234,10 @@ func (p *Pairing) AssertIsEqual(e1, e2 *GT) {
 	e1.AssertIsEqual(p.api, *e2)
 }
 
+func (p Pairing) IsEqual(e1, e2 *GT) frontend.Variable {
+	return e1.IsEqual(p.api, *e2)
+}
+
 // NewG1Affine allocates a witness from the native G1 element and returns it.
 func NewG1Affine(v bls12377.G1Affine) G1Affine {
 	return G1Affine{
