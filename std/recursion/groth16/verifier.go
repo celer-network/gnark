@@ -495,3 +495,51 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCmpReturn(vk VerifyingKe
 
 	return v.pairing.IsEqual(pairing, &vk.E), nil
 }
+
+func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], commitment G1El, witness Witness[FR]) error {
+	inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
+	for i := range inP {
+		inP[i] = &vk.G1.K[i+1]
+	}
+	fmt.Printf("witness.Public %d inP %d \n", len(witness.Public), len(inP))
+	inS := make([]*emulated.Element[FR], len(witness.Public))
+	for i := range inS {
+		inS[i] = &witness.Public[i]
+	}
+	kSum, err := v.curve.MultiScalarMul(inP, inS)
+	if err != nil {
+		return fmt.Errorf("multi scalar mul: %w", err)
+	}
+	kSum = v.curve.Add(kSum, &vk.G1.K[0])
+	kSum = v.curve.Add(kSum, &commitment)
+	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar}, []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs})
+	if err != nil {
+		return fmt.Errorf("pairing: %w", err)
+	}
+	v.pairing.AssertIsEqual(pairing, &vk.E)
+	return nil
+}
+
+// return 1 is pass, return 0 is fail
+func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitWithCmpReturn(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], commitment G1El, witness Witness[FR]) (frontend.Variable, error) {
+	inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
+	for i := range inP {
+		inP[i] = &vk.G1.K[i+1]
+	}
+	inS := make([]*emulated.Element[FR], len(witness.Public))
+	for i := range inS {
+		inS[i] = &witness.Public[i]
+	}
+	kSum, err := v.curve.MultiScalarMul(inP, inS)
+	if err != nil {
+		return 0, fmt.Errorf("multi scalar mul: %w", err)
+	}
+	kSum = v.curve.Add(kSum, &vk.G1.K[0])
+	kSum = v.curve.Add(kSum, &commitment)
+	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar}, []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs})
+	if err != nil {
+		return 0, fmt.Errorf("pairing: %w", err)
+	}
+
+	return v.pairing.IsEqual(pairing, &vk.E), nil
+}
