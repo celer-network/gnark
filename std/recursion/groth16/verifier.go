@@ -555,13 +555,26 @@ func ValueOfProofCommitment[G1El algebra.G1ElementT](proof groth16.Proof) (G1El,
 		if !ok {
 			return ret, fmt.Errorf("expected bls12377.Proof, got %T", proof)
 		}
-		*ar = sw_bls12377.NewG1Affine(tProof.Commitments[0])
+		if len(tProof.Commitments) == 0 {
+			*ar = sw_bls12377.NewG1Affine(bls12377.G1Affine{})
+		} else if len(tProof.Commitments) == 1 {
+			*ar = sw_bls12377.NewG1Affine(tProof.Commitments[0])
+		} else {
+			return ret, fmt.Errorf("invalid commitment len: %d", len(tProof.Commitments))
+		}
 	case *sw_bw6761.G1Affine:
 		tProof, ok := proof.(*groth16backend_bw6761.Proof)
 		if !ok {
 			return ret, fmt.Errorf("expected bw6761.Proof, got %T", proof)
 		}
-		*ar = sw_bw6761.NewG1Affine(tProof.Commitments[0])
+
+		if len(tProof.Commitments) == 0 {
+			*ar = sw_bw6761.NewG1Affine(bw6761.G1Affine{})
+		} else if len(tProof.Commitments) == 1 {
+			*ar = sw_bw6761.NewG1Affine(tProof.Commitments[0])
+		} else {
+			return ret, fmt.Errorf("invalid commitment len: %d", len(tProof.Commitments))
+		}
 	default:
 		return ret, fmt.Errorf("unknown parametric type combination")
 	}
