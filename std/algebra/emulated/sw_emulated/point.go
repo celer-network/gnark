@@ -123,6 +123,21 @@ func (c *Curve[B, S]) MarshalG1(p AffinePoint[B]) []frontend.Variable {
 	return res
 }
 
+func (c *Curve[B, S]) MarshalG1WithoutFlag(p AffinePoint[B]) []frontend.Variable {
+	var fp B
+	nbBits := 8 * ((fp.Modulus().BitLen() + 7) / 8)
+	x := c.baseApi.Reduce(&p.X)
+	y := c.baseApi.Reduce(&p.Y)
+	bx := c.baseApi.ToBits(x)[:nbBits]
+	by := c.baseApi.ToBits(y)[:nbBits]
+	slices.Reverse(bx)
+	slices.Reverse(by)
+	res := make([]frontend.Variable, 2*nbBits)
+	copy(res, bx)
+	copy(res[len(bx):], by)
+	return res
+}
+
 // Neg returns an inverse of p. It doesn't modify p.
 func (c *Curve[B, S]) Neg(p *AffinePoint[B]) *AffinePoint[B] {
 	return &AffinePoint[B]{
