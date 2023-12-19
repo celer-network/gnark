@@ -70,7 +70,15 @@ func (c *Curve) Add(P, Q *G1Affine) *G1Affine {
 		X: P.X,
 		Y: P.Y,
 	}
+
+	qxZ := c.api.IsZero(Q.X)
+	qyZ := c.api.IsZero(Q.Y)
+
 	res.AddAssign(c.api, *Q)
+
+	res.X = c.api.Select(qxZ, P.X, res.X)
+	res.Y = c.api.Select(qyZ, P.Y, res.Y)
+
 	return res
 }
 
