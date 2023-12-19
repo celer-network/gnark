@@ -543,3 +543,27 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitWithCmpReturn(vk V
 
 	return v.pairing.IsEqual(pairing, &vk.E), nil
 }
+
+// ValueOfProofCommitment returns the typed witness of the native proof. It returns an
+// error if there is a mismatch between the type parameters and the provided
+// native proof.
+func ValueOfProofCommitment[G1El algebra.G1ElementT](proof groth16.Proof) (G1El, error) {
+	var ret G1El
+	switch ar := any(&ret).(type) {
+	case *sw_bls12377.G1Affine:
+		tProof, ok := proof.(*groth16backend_bls12377.Proof)
+		if !ok {
+			return ret, fmt.Errorf("expected bls12377.Proof, got %T", proof)
+		}
+		*ar = sw_bls12377.NewG1Affine(tProof.Commitments[0])
+	case *sw_bw6761.G1Affine:
+		tProof, ok := proof.(*groth16backend_bw6761.Proof)
+		if !ok {
+			return ret, fmt.Errorf("expected bw6761.Proof, got %T", proof)
+		}
+		*ar = sw_bw6761.NewG1Affine(tProof.Commitments[0])
+	default:
+		return ret, fmt.Errorf("unknown parametric type combination")
+	}
+	return ret, nil
+}
