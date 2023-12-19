@@ -140,7 +140,7 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...bac
 	return nil
 }
 
-func VerifyBW761ExportCommitPub(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...backend.VerifierOption) (fr.Element, error) {
+func VerifyExportCommitPub(proof *Proof, vk *VerifyingKey, publicWitness fr.Vector, opts ...backend.VerifierOption) (fr.Element, error) {
 	commitPub := fr.Element{}
 	opt, err := backend.NewVerifierConfig(opts...)
 	if err != nil {
