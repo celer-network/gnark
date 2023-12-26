@@ -216,6 +216,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// 	}(i)))
 	// }
 
+	log.Printf("kkkkk")
+
 	if r1cs.GkrInfo.Is() {
 		var gkrData cs.GkrSolvingData
 		solverOpts = append(solverOpts,
