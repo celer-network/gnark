@@ -21,6 +21,7 @@ import (
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/constraint/solver"
+	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
@@ -156,35 +157,64 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
 
 	privateCommittedValues := make([][]fr.Element, len(commitmentInfo))
-	for i := range commitmentInfo {
-		solverOpts = append(solverOpts, solver.OverrideHint(commitmentInfo[i].HintID, func(i int) solver.Hint {
-			return func(_ *big.Int, in []*big.Int, out []*big.Int) error {
-				privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
-				hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
-				committed := in[len(hashed):]
-				for j, inJ := range committed {
-					privateCommittedValues[i][j].SetBigInt(inJ)
-				}
 
-				var err error
-				if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
-					return err
-				}
+	bsb22ID := solver.GetHintID(fcs.Bsb22CommitmentComputePlaceholder)
+	solverOpts = append(solverOpts, solver.OverrideHint(bsb22ID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
+		i := int(in[0].Int64())
+		in = in[1:]
+		privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
+		hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
+		committed := in[+len(hashed):]
+		for j, inJ := range committed {
+			privateCommittedValues[i][j].SetBigInt(inJ)
+		}
 
-				opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
-				hashBts := opt.HashToFieldFn.Sum(nil)
-				opt.HashToFieldFn.Reset()
-				nbBuf := fr.Bytes
-				if opt.HashToFieldFn.Size() < fr.Bytes {
-					nbBuf = opt.HashToFieldFn.Size()
-				}
-				var res fr.Element
-				res.SetBytes(hashBts[:nbBuf])
-				res.BigInt(out[0])
-				return err
-			}
-		}(i)))
-	}
+		var err error
+		if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
+			return err
+		}
+
+		opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
+		hashBts := opt.HashToFieldFn.Sum(nil)
+		opt.HashToFieldFn.Reset()
+		nbBuf := fr.Bytes
+		if opt.HashToFieldFn.Size() < fr.Bytes {
+			nbBuf = opt.HashToFieldFn.Size()
+		}
+		var res fr.Element
+		res.SetBytes(hashBts[:nbBuf])
+		res.BigInt(out[0])
+		return nil
+	}))
+	// for i := range commitmentInfo {
+	// 	solverOpts = append(solverOpts, solver.OverrideHint(commitmentInfo[i].HintID, func(i int) solver.Hint {
+	// 		return func(_ *big.Int, in []*big.Int, out []*big.Int) error {
+	// 			privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
+	// 			hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
+	// 			committed := in[len(hashed):]
+	// 			for j, inJ := range committed {
+	// 				privateCommittedValues[i][j].SetBigInt(inJ)
+	// 			}
+
+	// 			var err error
+	// 			if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
+	// 				return err
+	// 			}
+
+	// 			opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
+	// 			hashBts := opt.HashToFieldFn.Sum(nil)
+	// 			opt.HashToFieldFn.Reset()
+	// 			nbBuf := fr.Bytes
+	// 			if opt.HashToFieldFn.Size() < fr.Bytes {
+	// 				nbBuf = opt.HashToFieldFn.Size()
+	// 			}
+	// 			var res fr.Element
+	// 			res.SetBytes(hashBts[:nbBuf])
+	// 			res.BigInt(out[0])
+	// 			return err
+	// 		}
+	// 	}(i)))
+	// }
 
 	if r1cs.GkrInfo.Is() {
 		var gkrData cs.GkrSolvingData
