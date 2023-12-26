@@ -180,7 +180,6 @@ func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.
 		log.Printf("111:", icicle_bn254.HasIcicle)
 		if icicle_bn254.HasIcicle {
 			log.Printf("222")
-
 			return icicle_bn254.Prove(_r1cs, pk.(*icicle_bn254.ProvingKey), fullWitness, opts...)
 		}
 		return groth16_bn254.Prove(_r1cs, pk.(*groth16_bn254.ProvingKey), fullWitness, opts...)
