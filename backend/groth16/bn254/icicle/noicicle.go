@@ -1,4 +1,4 @@
-//go:build !icicle
+//go:build icicle
 
 package icicle_bn254
 
