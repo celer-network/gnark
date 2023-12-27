@@ -28,6 +28,7 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
+	"github.com/rs/zerolog/log"
 )
 
 const HasIcicle = true
@@ -727,19 +728,25 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
 		a_intt_d := iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		log.Debug().Msg("11111")
+
 		iciclegnark.NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		log.Debug().Msg("22222")
+
 		computeInttNttDone <- nil
 		iciclegnark.FreeDevicePointer(a_intt_d)
 	}
-
 	go computeInttNttOnDevice(a_device)
 	go computeInttNttOnDevice(b_device)
 	go computeInttNttOnDevice(c_device)
 	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
+	log.Debug().Msg("33333")
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	log.Debug().Msg("44444")
 
 	h := iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	log.Debug().Msg("55555")
 
 	go func() {
 		iciclegnark.FreeDevicePointer(a_device)
@@ -747,7 +754,10 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		iciclegnark.FreeDevicePointer(c_device)
 	}()
 
+	log.Debug().Msg("66666")
+
 	iciclegnark.ReverseScalars(h, n)
+	log.Debug().Msg("77777")
 
 	return h
 }
