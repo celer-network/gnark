@@ -27,6 +27,7 @@ import (
 	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/ingonyama-zk/icicle/goicicle"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
 )
 
@@ -317,43 +318,42 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	chKrsDone := make(chan error, 1)
 
-	computeKRS := func() error {
+	computeKRS := func() {
+		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+		// however, having similar lengths for our tasks helps with parallelism
+
 		var krs, krs2, p1 curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
-		// check for small circuits as iciclegnark doesn't handle zero sizes well
-		if len(pk.G1.Z) > 0 {
+		icicleRes, _, _ := iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true)
+		log.Debug().Msg("Icicle API: MSM KRS2 MSM")
 
-			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
-				return err
-			}
-		}
-
-		// filter the wire values if needed
-		// TODO Perf @Tabaie worst memory allocation offender
+		krs2 = icicleRes
+		// filter the wire values if needed;
+		// _wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+		// scals := _wireValues[r1cs.GetNbPublicVariables():]
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
 		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		// filter zero/infinity points since icicle doesn't handle them
-		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
+		// Filter scalars matching infinity point indices
+		// for _, indexToRemove := range pk.G1InfPointIndices.K {
+		// 	scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+		// }
 		for _, indexToRemove := range pk.InfinityPointIndicesK {
 			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
 		}
 
 		scalarBytes := len(scalars) * fr.Bytes
+		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scalars, scalarBytes)
+		iciclegnark.MontConvOnDevice(scalars_d, len(scalars), false)
 
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
-		scalars_d := <-copyDone
+		icicleRes, _, _ = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 
-		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
-		iciclegnark.FreeDevicePointer(scalars_d)
+		goicicle.CudaFree(scalars_d)
 
-		if err != nil {
-			return err
-		}
-
+		krs = icicleRes
 		krs.AddMixed(&deltas[2])
 
 		krs.AddAssign(&krs2)
@@ -365,9 +365,59 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
-
-		return nil
 	}
+
+	// computeKRS := func() error {
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+
+	// 	// check for small circuits as iciclegnark doesn't handle zero sizes well
+	// 	if len(pk.G1.Z) > 0 {
+
+	// 		if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+
+	// 	// filter the wire values if needed
+	// 	// TODO Perf @Tabaie worst memory allocation offender
+	// 	toRemove := commitmentInfo.GetPrivateCommitted()
+	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+	// 	scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+
+	// 	// filter zero/infinity points since icicle doesn't handle them
+	// 	// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
+	// 	for _, indexToRemove := range pk.InfinityPointIndicesK {
+	// 		scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
+	// 	}
+
+	// 	scalarBytes := len(scalars) * fr.Bytes
+
+	// 	copyDone := make(chan unsafe.Pointer, 1)
+	// 	iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
+	// 	scalars_d := <-copyDone
+
+	// 	krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
+	// 	iciclegnark.FreeDevicePointer(scalars_d)
+
+	// 	if err != nil {
+	// 		return err
+	// 	}
+
+	// 	krs.AddMixed(&deltas[2])
+
+	// 	krs.AddAssign(&krs2)
+
+	// 	p1.ScalarMultiplication(&ar, &s)
+	// 	krs.AddAssign(&p1)
+
+	// 	p1.ScalarMultiplication(&bs1, &r)
+	// 	krs.AddAssign(&p1)
+
+	// 	proof.Krs.FromJacobian(&krs)
+
+	// 	return nil
+	// }
 	// computeKRS := func() {
 	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 	// 	// however, having similar lengths for our tasks helps with parallelism
@@ -798,4 +848,24 @@ func computeh(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
 
 	return a
+}
+
+func filter(slice []fr.Element, toRemove []int) (r []fr.Element) {
+
+	if len(toRemove) == 0 {
+		return slice
+	}
+	r = make([]fr.Element, 0, len(slice)-len(toRemove))
+
+	j := 0
+	// note: we can optimize that for the likely case where len(slice) >>> len(toRemove)
+	for i := 0; i < len(slice); i++ {
+		if j < len(toRemove) && i == toRemove[j] {
+			j++
+			continue
+		}
+		r = append(r, slice[i])
+	}
+
+	return r
 }
