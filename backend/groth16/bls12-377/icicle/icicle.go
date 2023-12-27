@@ -318,18 +318,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// 	return nil
 	// }
-	// computeAR1 := func() {
-	// 	<-chWireValuesA
-	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chArDone <- err
-	// 		close(chArDone)
-	// 		return
-	// 	}
-	// 	ar.AddMixed(&pk.G1.Alpha)
-	// 	ar.AddMixed(&deltas[0])
-	// 	proof.Ar.FromJacobian(&ar)
-	// 	chArDone <- nil
-	// }
+	computeAR1 := func() {
+		<-chWireValuesA
+		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chArDone <- err
+			close(chArDone)
+			return
+		}
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(&ar)
+		chArDone <- nil
+	}
 
 	chKrsDone := make(chan error, 1)
 
@@ -466,7 +466,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// schedule our proof part computations
 	go computeKRS()
-	// go computeAR1()
+	go computeAR1()
 	go computeBS1()
 	if err := computeBS2(); err != nil {
 		return nil, err
