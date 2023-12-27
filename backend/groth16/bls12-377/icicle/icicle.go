@@ -244,6 +244,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var wireValuesA, wireValuesB []fr.Element
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
+	var wireValuesADevice iciclegnark.OnDeviceData
+
 	go func() {
 		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
@@ -302,18 +304,32 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	chArDone := make(chan error, 1)
-	computeAR1 := func() {
+	// gpu
+	computeAR1 := func() error {
 		<-chWireValuesA
-		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chArDone <- err
-			close(chArDone)
-			return
+
+		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
+			return err
 		}
+
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		chArDone <- nil
+
+		return nil
 	}
+	// computeAR1 := func() {
+	// 	<-chWireValuesA
+	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+	// 		chArDone <- err
+	// 		close(chArDone)
+	// 		return
+	// 	}
+	// 	ar.AddMixed(&pk.G1.Alpha)
+	// 	ar.AddMixed(&deltas[0])
+	// 	proof.Ar.FromJacobian(&ar)
+	// 	chArDone <- nil
+	// }
 
 	chKrsDone := make(chan error, 1)
 
