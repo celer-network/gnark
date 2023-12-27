@@ -284,38 +284,38 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// computes r[δ], s[δ], kr[δ]
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	// var bs1, ar curve.G1Jac
+	var bs1, ar curve.G1Jac
 
 	n := runtime.NumCPU()
 
-	// chBs1Done := make(chan error, 1)
-	// computeBS1 := func() {
-	// 	<-chWireValuesB
-	// 	if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chBs1Done <- err
-	// 		close(chBs1Done)
-	// 		return
-	// 	}
-	// 	bs1.AddMixed(&pk.G1.Beta)
-	// 	bs1.AddMixed(&deltas[1])
-	// 	chBs1Done <- nil
-	// }
+	chBs1Done := make(chan error, 1)
+	computeBS1 := func() {
+		<-chWireValuesB
+		if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chBs1Done <- err
+			close(chBs1Done)
+			return
+		}
+		bs1.AddMixed(&pk.G1.Beta)
+		bs1.AddMixed(&deltas[1])
+		chBs1Done <- nil
+	}
 
-	// chArDone := make(chan error, 1)
-	// computeAR1 := func() {
-	// 	<-chWireValuesA
-	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chArDone <- err
-	// 		close(chArDone)
-	// 		return
-	// 	}
-	// 	ar.AddMixed(&pk.G1.Alpha)
-	// 	ar.AddMixed(&deltas[0])
-	// 	proof.Ar.FromJacobian(&ar)
-	// 	chArDone <- nil
-	// }
+	chArDone := make(chan error, 1)
+	computeAR1 := func() {
+		<-chWireValuesA
+		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chArDone <- err
+			close(chArDone)
+			return
+		}
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(&ar)
+		chArDone <- nil
+	}
 
-	// chKrsDone := make(chan error, 1)
+	chKrsDone := make(chan error, 1)
 
 	// computeKRS := func() error {
 	// 	var krs, krs2, p1 curve.G1Jac
@@ -372,7 +372,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2 curve.G1Jac
+		var krs, krs2, p1 curve.G1Jac
 		chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
@@ -387,79 +387,79 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
 		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			// chKrsDone <- err
+			chKrsDone <- err
 			return
 		}
 		krs.AddMixed(&deltas[2])
-		// n := 3
-		// for n != 0 {
-		// 	select {
-		// 	case err := <-chKrs2Done:
-		// 		if err != nil {
-		// 			chKrsDone <- err
-		// 			return
-		// 		}
-		// 		krs.AddAssign(&krs2)
-		// 	case err := <-chArDone:
-		// 		if err != nil {
-		// 			chKrsDone <- err
-		// 			return
-		// 		}
-		// 		p1.ScalarMultiplication(&ar, &s)
-		// 		krs.AddAssign(&p1)
-		// 	case err := <-chBs1Done:
-		// 		if err != nil {
-		// 			chKrsDone <- err
-		// 			return
-		// 		}
-		// 		p1.ScalarMultiplication(&bs1, &r)
-		// 		krs.AddAssign(&p1)
-		// 	}
-		// 	n--
-		// }
+		n := 3
+		for n != 0 {
+			select {
+			case err := <-chKrs2Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				krs.AddAssign(&krs2)
+			case err := <-chArDone:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&ar, &s)
+				krs.AddAssign(&p1)
+			case err := <-chBs1Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&bs1, &r)
+				krs.AddAssign(&p1)
+			}
+			n--
+		}
 
 		proof.Krs.FromJacobian(&krs)
-		// chKrsDone <- nil
+		chKrsDone <- nil
 	}
 
-	// computeBS2 := func() error {
-	// 	// Bs2 (1 multi exp G2 - size = len(wires))
-	// 	var Bs, deltaS curve.G2Jac
+	computeBS2 := func() error {
+		// Bs2 (1 multi exp G2 - size = len(wires))
+		var Bs, deltaS curve.G2Jac
 
-	// 	nbTasks := n
-	// 	if nbTasks <= 16 {
-	// 		// if we don't have a lot of CPUs, this may artificially split the MSM
-	// 		nbTasks *= 2
-	// 	}
-	// 	<-chWireValuesB
-	// 	if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-	// 		return err
-	// 	}
+		nbTasks := n
+		if nbTasks <= 16 {
+			// if we don't have a lot of CPUs, this may artificially split the MSM
+			nbTasks *= 2
+		}
+		<-chWireValuesB
+		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+			return err
+		}
 
-	// 	deltaS.FromAffine(&pk.G2.Delta)
-	// 	deltaS.ScalarMultiplication(&deltaS, &s)
-	// 	Bs.AddAssign(&deltaS)
-	// 	Bs.AddMixed(&pk.G2.Beta)
+		deltaS.FromAffine(&pk.G2.Delta)
+		deltaS.ScalarMultiplication(&deltaS, &s)
+		Bs.AddAssign(&deltaS)
+		Bs.AddMixed(&pk.G2.Beta)
 
-	// 	proof.Bs.FromJacobian(&Bs)
-	// 	return nil
-	// }
+		proof.Bs.FromJacobian(&Bs)
+		return nil
+	}
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
 
 	// schedule our proof part computations
 	go computeKRS()
-	// go computeAR1()
-	// go computeBS1()
-	// if err := computeBS2(); err != nil {
-	// 	return nil, err
-	// }
+	go computeAR1()
+	go computeBS1()
+	if err := computeBS2(); err != nil {
+		return nil, err
+	}
 
 	// wait for all parts of the proof to be computed.
-	// if err := <-chKrsDone; err != nil {
-	// 	return nil, err
-	// }
+	if err := <-chKrsDone; err != nil {
+		return nil, err
+	}
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
