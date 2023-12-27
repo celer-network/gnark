@@ -1,4 +1,4 @@
-//go:build !icicle
+//go:build icicle
 
 package icicle_bn254
 
@@ -134,7 +134,6 @@ func (pk *ProvingKey) setupDevicePointers() error {
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
 	log.Debug().Msg("qqqqq")
-
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -142,6 +141,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
+	fmt.Println("icicle:", opt.Accelerator)
 	if opt.Accelerator != "icicle" {
 		return groth16_bn254.Prove(r1cs, &pk.ProvingKey, fullWitness, opts...)
 	}
