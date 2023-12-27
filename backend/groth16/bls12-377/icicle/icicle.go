@@ -19,7 +19,6 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
-	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
@@ -27,7 +26,6 @@ import (
 	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
-	"github.com/ingonyama-zk/icicle/goicicle"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
 )
 
@@ -230,15 +228,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// }()
 
 	// H (witness reduction / FFT part)
-	var h unsafe.Pointer
+	// var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
-	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
-		solution.A = nil
-		solution.B = nil
-		solution.C = nil
-		chHDone <- struct{}{}
-	}()
+	// go func() {
+	// 	h = computeH(solution.A, solution.B, solution.C, pk)
+	// 	solution.A = nil
+	// 	solution.B = nil
+	// 	solution.C = nil
+	// 	chHDone <- struct{}{}
+	// }()
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -318,54 +316,54 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	chKrsDone := make(chan error, 1)
 
-	computeKRS := func() {
-		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-		// however, having similar lengths for our tasks helps with parallelism
+	// computeKRS := func() {
+	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// 	// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 curve.G1Jac
-		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
-		icicleRes, _, _ := iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true)
-		log.Debug().Msg("Icicle API: MSM KRS2 MSM")
+	// 	icicleRes, _, _ := iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true)
+	// 	log.Debug().Msg("Icicle API: MSM KRS2 MSM")
 
-		krs2 = icicleRes
-		// filter the wire values if needed;
-		// _wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
-		// scals := _wireValues[r1cs.GetNbPublicVariables():]
-		toRemove := commitmentInfo.GetPrivateCommitted()
-		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+	// 	krs2 = icicleRes
+	// 	// filter the wire values if needed;
+	// 	// _wireValues := filter(wireValues, r1cs.CommitmentInfo.PrivateToPublic())
+	// 	// scals := _wireValues[r1cs.GetNbPublicVariables():]
+	// 	toRemove := commitmentInfo.GetPrivateCommitted()
+	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+	// 	scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		// Filter scalars matching infinity point indices
-		// for _, indexToRemove := range pk.G1InfPointIndices.K {
-		// 	scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
-		// }
-		for _, indexToRemove := range pk.InfinityPointIndicesK {
-			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
-		}
+	// 	// Filter scalars matching infinity point indices
+	// 	// for _, indexToRemove := range pk.G1InfPointIndices.K {
+	// 	// 	scals = append(scals[:indexToRemove], scals[indexToRemove+1:]...)
+	// 	// }
+	// 	for _, indexToRemove := range pk.InfinityPointIndicesK {
+	// 		scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
+	// 	}
 
-		scalarBytes := len(scalars) * fr.Bytes
-		scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
-		goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scalars, scalarBytes)
-		iciclegnark.MontConvOnDevice(scalars_d, len(scalars), false)
+	// 	scalarBytes := len(scalars) * fr.Bytes
+	// 	scalars_d, _ := goicicle.CudaMalloc(scalarBytes)
+	// 	goicicle.CudaMemCpyHtoD[fr.Element](scalars_d, scalars, scalarBytes)
+	// 	iciclegnark.MontConvOnDevice(scalars_d, len(scalars), false)
 
-		icicleRes, _, _ = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
+	// 	icicleRes, _, _ = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 
-		goicicle.CudaFree(scalars_d)
+	// 	goicicle.CudaFree(scalars_d)
 
-		krs = icicleRes
-		krs.AddMixed(&deltas[2])
+	// 	krs = icicleRes
+	// 	krs.AddMixed(&deltas[2])
 
-		krs.AddAssign(&krs2)
+	// 	krs.AddAssign(&krs2)
 
-		p1.ScalarMultiplication(&ar, &s)
-		krs.AddAssign(&p1)
+	// 	p1.ScalarMultiplication(&ar, &s)
+	// 	krs.AddAssign(&p1)
 
-		p1.ScalarMultiplication(&bs1, &r)
-		krs.AddAssign(&p1)
+	// 	p1.ScalarMultiplication(&bs1, &r)
+	// 	krs.AddAssign(&p1)
 
-		proof.Krs.FromJacobian(&krs)
-	}
+	// 	proof.Krs.FromJacobian(&krs)
+	// }
 
 	// computeKRS := func() error {
 	// 	var krs, krs2, p1 curve.G1Jac
@@ -499,7 +497,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	go computeKRS()
+	// go computeKRS()
 	go computeAR1()
 	go computeBS1()
 	if err := computeBS2(); err != nil {
