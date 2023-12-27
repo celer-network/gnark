@@ -675,6 +675,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// wait for FFT to end
 	<-chHDone
 
+	log.Debug().Msg("????")
+
 	// schedule our proof part computations
 	if err := computeAR1(); err != nil {
 		return nil, err
