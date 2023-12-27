@@ -233,12 +233,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// chHDone := make(chan struct{}, 1)
 	go func() {
 		hh = computeH(solution.A, solution.B, solution.C, pk)
-		solution.A = nil
-		solution.B = nil
-		solution.C = nil
-		chHDone <- struct{}{}
 	}()
-	fmt.Println(hh)
+	fmt.Println("hhhh:", hh)
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
