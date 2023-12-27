@@ -464,13 +464,22 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
 
+	log.Debug().Msg("okok")
+
 	// schedule our proof part computations
 	go computeKRS()
+	log.Debug().Msg("computeKRS")
+
 	go computeAR1()
+	log.Debug().Msg("computeAR1")
+
 	go computeBS1()
+	log.Debug().Msg("computeBS1")
+
 	if err := computeBS2(); err != nil {
 		return nil, err
 	}
+	log.Debug().Msg("computeBS2")
 
 	// wait for all parts of the proof to be computed.
 	if err := <-chKrsDone; err != nil {
