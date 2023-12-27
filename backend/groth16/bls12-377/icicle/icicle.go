@@ -26,6 +26,7 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
+	"github.com/rs/zerolog/log"
 )
 
 const HasIcicle = true
@@ -675,8 +676,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// wait for FFT to end
 	<-chHDone
 
-	log.Debug().Msg("????")
-
 	// schedule our proof part computations
 	if err := computeAR1(); err != nil {
 		return nil, err
@@ -781,6 +780,7 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	}()
 
 	iciclegnark.ReverseScalars(h, n)
+	log.Debug().Msg("????")
 
 	return h
 }
