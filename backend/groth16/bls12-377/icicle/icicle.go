@@ -28,7 +28,6 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
-	"github.com/rs/zerolog/log"
 )
 
 const HasIcicle = true
@@ -323,6 +322,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		// check for small circuits as iciclegnark doesn't handle zero sizes well
 		if len(pk.G1.Z) > 0 {
+			log.Debug().Msg("11111")
 			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
 				return err
 			}
@@ -333,18 +333,21 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
 		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		log.Debug().Msg("22222")
 
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
 		for _, indexToRemove := range pk.InfinityPointIndicesK {
 			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
 		}
+		log.Debug().Msg("33333")
 
 		scalarBytes := len(scalars) * fr.Bytes
 
 		copyDone := make(chan unsafe.Pointer, 1)
 		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
 		scalars_d := <-copyDone
+		log.Debug().Msg("44444")
 
 		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 		iciclegnark.FreeDevicePointer(scalars_d)
@@ -352,6 +355,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		if err != nil {
 			return err
 		}
+		log.Debug().Msg("55555")
 
 		krs.AddMixed(&deltas[2])
 
@@ -362,6 +366,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		p1.ScalarMultiplication(&bs1, &r)
 		krs.AddAssign(&p1)
+		log.Debug().Msg("66666")
 
 		proof.Krs.FromJacobian(&krs)
 
@@ -728,10 +733,8 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
 		a_intt_d := iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
-		log.Debug().Msg("11111")
 
 		iciclegnark.NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		log.Debug().Msg("22222")
 
 		computeInttNttDone <- nil
 		iciclegnark.FreeDevicePointer(a_intt_d)
@@ -740,13 +743,10 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	go computeInttNttOnDevice(b_device)
 	go computeInttNttOnDevice(c_device)
 	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
-	log.Debug().Msg("33333")
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
-	log.Debug().Msg("44444")
 
 	h := iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
-	log.Debug().Msg("55555")
 
 	go func() {
 		iciclegnark.FreeDevicePointer(a_device)
@@ -754,10 +754,7 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 		iciclegnark.FreeDevicePointer(c_device)
 	}()
 
-	log.Debug().Msg("66666")
-
 	iciclegnark.ReverseScalars(h, n)
-	log.Debug().Msg("77777")
 
 	return h
 }
