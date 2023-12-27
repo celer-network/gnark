@@ -422,28 +422,28 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		chKrsDone <- nil
 	}
 
-	computeBS2 := func() error {
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
+	// computeBS2 := func() error {
+	// 	// Bs2 (1 multi exp G2 - size = len(wires))
+	// 	var Bs, deltaS curve.G2Jac
 
-		nbTasks := n
-		if nbTasks <= 16 {
-			// if we don't have a lot of CPUs, this may artificially split the MSM
-			nbTasks *= 2
-		}
-		<-chWireValuesB
-		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-			return err
-		}
+	// 	nbTasks := n
+	// 	if nbTasks <= 16 {
+	// 		// if we don't have a lot of CPUs, this may artificially split the MSM
+	// 		nbTasks *= 2
+	// 	}
+	// 	<-chWireValuesB
+	// 	if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+	// 		return err
+	// 	}
 
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
+	// 	deltaS.FromAffine(&pk.G2.Delta)
+	// 	deltaS.ScalarMultiplication(&deltaS, &s)
+	// 	Bs.AddAssign(&deltaS)
+	// 	Bs.AddMixed(&pk.G2.Beta)
 
-		proof.Bs.FromJacobian(&Bs)
-		return nil
-	}
+	// 	proof.Bs.FromJacobian(&Bs)
+	// 	return nil
+	// }
 
 	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
@@ -452,9 +452,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	go computeKRS()
 	go computeAR1()
 	go computeBS1()
-	if err := computeBS2(); err != nil {
-		return nil, err
-	}
+	// if err := computeBS2(); err != nil {
+	// 	return nil, err
+	// }
 
 	// wait for all parts of the proof to be computed.
 	if err := <-chKrsDone; err != nil {
