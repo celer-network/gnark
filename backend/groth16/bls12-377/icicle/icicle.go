@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"time"
 	"unsafe"
 
+	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp/hash_to_field"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
@@ -215,10 +218,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	// H (witness reduction / FFT part)
-	var h unsafe.Pointer
+	var h []fr.Element
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		h = computeh(solution.A, solution.B, solution.C, &pk.Domain)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -227,11 +230,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var wireValuesADevice, wireValuesBDevice iciclegnark.OnDeviceData
+	var wireValuesA, wireValuesB []fr.Element
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -239,24 +242,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesA[j] = wireValues[i]
 			j++
 		}
-		wireValuesASize := len(wireValuesA)
-		scalarBytes := wireValuesASize * fr.Bytes
-
-		// Copy scalars to the device and retain ptr to them
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(wireValuesA, scalarBytes, copyDone)
-		wireValuesADevicePtr := <-copyDone
-
-		wireValuesADevice = iciclegnark.OnDeviceData{
-			P:    wireValuesADevicePtr,
-			Size: wireValuesASize,
-		}
-
 		close(chWireValuesA)
 	}()
-
 	go func() {
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+		wireValuesB = make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -264,19 +253,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesB[j] = wireValues[i]
 			j++
 		}
-		wireValuesBSize := len(wireValuesB)
-		scalarBytes := wireValuesBSize * fr.Bytes
-
-		// Copy scalars to the device and retain ptr to them
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(wireValuesB, scalarBytes, copyDone)
-		wireValuesBDevicePtr := <-copyDone
-
-		wireValuesBDevice = iciclegnark.OnDeviceData{
-			P:    wireValuesBDevicePtr,
-			Size: wireValuesBSize,
-		}
-
 		close(chWireValuesB)
 	}()
 
@@ -299,90 +275,101 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	computeBS1 := func() error {
+	n := runtime.NumCPU()
+
+	chBs1Done := make(chan error, 1)
+	computeBS1 := func() {
 		<-chWireValuesB
-
-		if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
-			return err
+		if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chBs1Done <- err
+			close(chBs1Done)
+			return
 		}
-
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
-
-		return nil
+		chBs1Done <- nil
 	}
 
-	computeAR1 := func() error {
+	chArDone := make(chan error, 1)
+	computeAR1 := func() {
 		<-chWireValuesA
-
-		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
-			return err
+		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chArDone <- err
+			close(chArDone)
+			return
 		}
-
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-
-		return nil
+		chArDone <- nil
 	}
 
-	computeKRS := func() error {
-		var krs, krs2, p1 curve.G1Jac
-		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+	chKrsDone := make(chan error, 1)
+	computeKRS := func() {
+		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+		// however, having similar lengths for our tasks helps with parallelism
 
-		// check for small circuits as iciclegnark doesn't handle zero sizes well
-		if len(pk.G1.Z) > 0 {
-			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
-				return err
-			}
-		}
+		var krs, krs2, p1 curve.G1Jac
+		chKrs2Done := make(chan error, 1)
+		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+		go func() {
+			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+			chKrs2Done <- err
+		}()
 
 		// filter the wire values if needed
 		// TODO Perf @Tabaie worst memory allocation offender
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		// filter zero/infinity points since icicle doesn't handle them
-		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		for _, indexToRemove := range pk.InfinityPointIndicesK {
-			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
+		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chKrsDone <- err
+			return
 		}
-
-		scalarBytes := len(scalars) * fr.Bytes
-
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
-		scalars_d := <-copyDone
-
-		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
-		iciclegnark.FreeDevicePointer(scalars_d)
-
-		if err != nil {
-			return err
-		}
-
 		krs.AddMixed(&deltas[2])
-
-		krs.AddAssign(&krs2)
-
-		p1.ScalarMultiplication(&ar, &s)
-		krs.AddAssign(&p1)
-
-		p1.ScalarMultiplication(&bs1, &r)
-		krs.AddAssign(&p1)
+		n := 3
+		for n != 0 {
+			select {
+			case err := <-chKrs2Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				krs.AddAssign(&krs2)
+			case err := <-chArDone:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&ar, &s)
+				krs.AddAssign(&p1)
+			case err := <-chBs1Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&bs1, &r)
+				krs.AddAssign(&p1)
+			}
+			n--
+		}
 
 		proof.Krs.FromJacobian(&krs)
-
-		return nil
+		chKrsDone <- nil
 	}
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
+		nbTasks := n
+		if nbTasks <= 16 {
+			// if we don't have a lot of CPUs, this may artificially split the MSM
+			nbTasks *= 2
+		}
 		<-chWireValuesB
-		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
+		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
 			return err
 		}
 
@@ -395,31 +382,230 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}
 
-	// wait for FFT to end
+	// wait for FFT to end, as it uses all our CPUs
 	<-chHDone
 
 	// schedule our proof part computations
-	if err := computeAR1(); err != nil {
-		return nil, err
-	}
-	if err := computeBS1(); err != nil {
-		return nil, err
-	}
-	if err := computeKRS(); err != nil {
-		return nil, err
-	}
+	go computeKRS()
+	go computeAR1()
+	go computeBS1()
 	if err := computeBS2(); err != nil {
+		return nil, err
+	}
+
+	// wait for all parts of the proof to be computed.
+	if err := <-chKrsDone; err != nil {
 		return nil, err
 	}
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
-	// free device/GPU memory that is not needed for future proofs (scalars/hpoly)
-	go func() {
-		iciclegnark.FreeDevicePointer(wireValuesADevice.P)
-		iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
-		iciclegnark.FreeDevicePointer(h)
-	}()
+	// H (witness reduction / FFT part)
+	// var h unsafe.Pointer
+	// chHDone := make(chan struct{}, 1)
+	// go func() {
+	// 	h = computeH(solution.A, solution.B, solution.C, pk)
+	// 	solution.A = nil
+	// 	solution.B = nil
+	// 	solution.C = nil
+	// 	chHDone <- struct{}{}
+	// }()
+
+	// // we need to copy and filter the wireValues for each multi exp
+	// // as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
+	// var wireValuesADevice, wireValuesBDevice iciclegnark.OnDeviceData
+	// chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
+
+	// go func() {
+	// 	wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+	// 	for i, j := 0, 0; j < len(wireValuesA); i++ {
+	// 		if pk.InfinityA[i] {
+	// 			continue
+	// 		}
+	// 		wireValuesA[j] = wireValues[i]
+	// 		j++
+	// 	}
+	// 	wireValuesASize := len(wireValuesA)
+	// 	scalarBytes := wireValuesASize * fr.Bytes
+
+	// 	// Copy scalars to the device and retain ptr to them
+	// 	copyDone := make(chan unsafe.Pointer, 1)
+	// 	iciclegnark.CopyToDevice(wireValuesA, scalarBytes, copyDone)
+	// 	wireValuesADevicePtr := <-copyDone
+
+	// 	wireValuesADevice = iciclegnark.OnDeviceData{
+	// 		P:    wireValuesADevicePtr,
+	// 		Size: wireValuesASize,
+	// 	}
+
+	// 	close(chWireValuesA)
+	// }()
+
+	// go func() {
+	// 	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+	// 	for i, j := 0, 0; j < len(wireValuesB); i++ {
+	// 		if pk.InfinityB[i] {
+	// 			continue
+	// 		}
+	// 		wireValuesB[j] = wireValues[i]
+	// 		j++
+	// 	}
+	// 	wireValuesBSize := len(wireValuesB)
+	// 	scalarBytes := wireValuesBSize * fr.Bytes
+
+	// 	// Copy scalars to the device and retain ptr to them
+	// 	copyDone := make(chan unsafe.Pointer, 1)
+	// 	iciclegnark.CopyToDevice(wireValuesB, scalarBytes, copyDone)
+	// 	wireValuesBDevicePtr := <-copyDone
+
+	// 	wireValuesBDevice = iciclegnark.OnDeviceData{
+	// 		P:    wireValuesBDevicePtr,
+	// 		Size: wireValuesBSize,
+	// 	}
+
+	// 	close(chWireValuesB)
+	// }()
+
+	// // sample random r and s
+	// var r, s big.Int
+	// var _r, _s, _kr fr.Element
+	// if _, err := _r.SetRandom(); err != nil {
+	// 	return nil, err
+	// }
+	// if _, err := _s.SetRandom(); err != nil {
+	// 	return nil, err
+	// }
+	// _kr.Mul(&_r, &_s).Neg(&_kr)
+
+	// _r.BigInt(&r)
+	// _s.BigInt(&s)
+
+	// // computes r[δ], s[δ], kr[δ]
+	// deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+
+	// var bs1, ar curve.G1Jac
+
+	// computeBS1 := func() error {
+	// 	<-chWireValuesB
+
+	// 	if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
+	// 		return err
+	// 	}
+
+	// 	bs1.AddMixed(&pk.G1.Beta)
+	// 	bs1.AddMixed(&deltas[1])
+
+	// 	return nil
+	// }
+
+	// computeAR1 := func() error {
+	// 	<-chWireValuesA
+
+	// 	if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
+	// 		return err
+	// 	}
+
+	// 	ar.AddMixed(&pk.G1.Alpha)
+	// 	ar.AddMixed(&deltas[0])
+	// 	proof.Ar.FromJacobian(&ar)
+
+	// 	return nil
+	// }
+
+	// computeKRS := func() error {
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+
+	// 	// check for small circuits as iciclegnark doesn't handle zero sizes well
+	// 	if len(pk.G1.Z) > 0 {
+	// 		if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+
+	// 	// filter the wire values if needed
+	// 	// TODO Perf @Tabaie worst memory allocation offender
+	// 	toRemove := commitmentInfo.GetPrivateCommitted()
+	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+	// 	scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+
+	// 	// filter zero/infinity points since icicle doesn't handle them
+	// 	// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
+	// 	for _, indexToRemove := range pk.InfinityPointIndicesK {
+	// 		scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
+	// 	}
+
+	// 	scalarBytes := len(scalars) * fr.Bytes
+
+	// 	copyDone := make(chan unsafe.Pointer, 1)
+	// 	iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
+	// 	scalars_d := <-copyDone
+
+	// 	krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
+	// 	iciclegnark.FreeDevicePointer(scalars_d)
+
+	// 	if err != nil {
+	// 		return err
+	// 	}
+
+	// 	krs.AddMixed(&deltas[2])
+
+	// 	krs.AddAssign(&krs2)
+
+	// 	p1.ScalarMultiplication(&ar, &s)
+	// 	krs.AddAssign(&p1)
+
+	// 	p1.ScalarMultiplication(&bs1, &r)
+	// 	krs.AddAssign(&p1)
+
+	// 	proof.Krs.FromJacobian(&krs)
+
+	// 	return nil
+	// }
+
+	// computeBS2 := func() error {
+	// 	// Bs2 (1 multi exp G2 - size = len(wires))
+	// 	var Bs, deltaS curve.G2Jac
+
+	// 	<-chWireValuesB
+	// 	if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
+	// 		return err
+	// 	}
+
+	// 	deltaS.FromAffine(&pk.G2.Delta)
+	// 	deltaS.ScalarMultiplication(&deltaS, &s)
+	// 	Bs.AddAssign(&deltaS)
+	// 	Bs.AddMixed(&pk.G2.Beta)
+
+	// 	proof.Bs.FromJacobian(&Bs)
+	// 	return nil
+	// }
+
+	// // wait for FFT to end
+	// <-chHDone
+
+	// // schedule our proof part computations
+	// if err := computeAR1(); err != nil {
+	// 	return nil, err
+	// }
+	// if err := computeBS1(); err != nil {
+	// 	return nil, err
+	// }
+	// if err := computeKRS(); err != nil {
+	// 	return nil, err
+	// }
+	// if err := computeBS2(); err != nil {
+	// 	return nil, err
+	// }
+
+	// log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+
+	// // free device/GPU memory that is not needed for future proofs (scalars/hpoly)
+	// go func() {
+	// 	iciclegnark.FreeDevicePointer(wireValuesADevice.P)
+	// 	iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
+	// 	iciclegnark.FreeDevicePointer(h)
+	// }()
 
 	return proof, nil
 }
@@ -503,4 +689,49 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	iciclegnark.ReverseScalars(h, n)
 
 	return h
+}
+
+func computeh(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+
+	n := len(a)
+
+	// add padding to ensure input length is domain cardinality
+	padding := make([]fr.Element, int(domain.Cardinality)-n)
+	a = append(a, padding...)
+	b = append(b, padding...)
+	c = append(c, padding...)
+	n = len(a)
+
+	domain.FFTInverse(a, fft.DIF)
+	domain.FFTInverse(b, fft.DIF)
+	domain.FFTInverse(c, fft.DIF)
+
+	domain.FFT(a, fft.DIT, fft.OnCoset())
+	domain.FFT(b, fft.DIT, fft.OnCoset())
+	domain.FFT(c, fft.DIT, fft.OnCoset())
+
+	var den, one fr.Element
+	one.SetOne()
+	den.Exp(domain.FrMultiplicativeGen, big.NewInt(int64(domain.Cardinality)))
+	den.Sub(&den, &one).Inverse(&den)
+
+	// h = ifft_coset(ca o cb - cc)
+	// reusing a to avoid unnecessary memory allocation
+	utils.Parallelize(n, func(start, end int) {
+		for i := start; i < end; i++ {
+			a[i].Mul(&a[i], &b[i]).
+				Sub(&a[i], &c[i]).
+				Mul(&a[i], &den)
+		}
+	})
+
+	// ifft_coset
+	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
+
+	return a
 }
