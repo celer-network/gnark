@@ -26,7 +26,6 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
-	"github.com/rs/zerolog/log"
 )
 
 const HasIcicle = true
@@ -780,7 +779,7 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	}()
 
 	iciclegnark.ReverseScalars(h, n)
-	log.Debug().Msg("????")
+	fmt.Println("hhh:", h)
 
 	return h
 }
