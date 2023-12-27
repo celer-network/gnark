@@ -288,7 +288,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	n := runtime.NumCPU()
 
-	chBs1Done := make(chan error, 1)
+	// chBs1Done := make(chan error, 1)
 	// computeBS1 := func() {
 	// 	<-chWireValuesB
 	// 	if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
@@ -301,7 +301,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// 	chBs1Done <- nil
 	// }
 
-	chArDone := make(chan error, 1)
+	// chArDone := make(chan error, 1)
 	// computeAR1 := func() {
 	// 	<-chWireValuesA
 	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
@@ -315,7 +315,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// 	chArDone <- nil
 	// }
 
-	chKrsDone := make(chan error, 1)
+	// chKrsDone := make(chan error, 1)
 
 	// computeKRS := func() error {
 	// 	var krs, krs2, p1 curve.G1Jac
@@ -387,39 +387,39 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
 		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chKrsDone <- err
+			// chKrsDone <- err
 			return
 		}
 		krs.AddMixed(&deltas[2])
-		n := 3
-		for n != 0 {
-			select {
-			case err := <-chKrs2Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				krs.AddAssign(&krs2)
-			case err := <-chArDone:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&ar, &s)
-				krs.AddAssign(&p1)
-			case err := <-chBs1Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&bs1, &r)
-				krs.AddAssign(&p1)
-			}
-			n--
-		}
+		// n := 3
+		// for n != 0 {
+		// 	select {
+		// 	case err := <-chKrs2Done:
+		// 		if err != nil {
+		// 			chKrsDone <- err
+		// 			return
+		// 		}
+		// 		krs.AddAssign(&krs2)
+		// 	case err := <-chArDone:
+		// 		if err != nil {
+		// 			chKrsDone <- err
+		// 			return
+		// 		}
+		// 		p1.ScalarMultiplication(&ar, &s)
+		// 		krs.AddAssign(&p1)
+		// 	case err := <-chBs1Done:
+		// 		if err != nil {
+		// 			chKrsDone <- err
+		// 			return
+		// 		}
+		// 		p1.ScalarMultiplication(&bs1, &r)
+		// 		krs.AddAssign(&p1)
+		// 	}
+		// 	n--
+		// }
 
 		proof.Krs.FromJacobian(&krs)
-		chKrsDone <- nil
+		// chKrsDone <- nil
 	}
 
 	// computeBS2 := func() error {
