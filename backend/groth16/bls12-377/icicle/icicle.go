@@ -284,7 +284,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// computes r[δ], s[δ], kr[δ]
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	var bs1, ar curve.G1Jac
+	// var bs1, ar curve.G1Jac
 
 	n := runtime.NumCPU()
 
@@ -372,7 +372,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
 		// however, having similar lengths for our tasks helps with parallelism
 
-		var krs, krs2, p1 curve.G1Jac
+		var krs, krs2 curve.G1Jac
 		chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
@@ -457,9 +457,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// }
 
 	// wait for all parts of the proof to be computed.
-	if err := <-chKrsDone; err != nil {
-		return nil, err
-	}
+	// if err := <-chKrsDone; err != nil {
+	// 	return nil, err
+	// }
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
