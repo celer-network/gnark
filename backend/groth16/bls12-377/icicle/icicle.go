@@ -289,31 +289,31 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	n := runtime.NumCPU()
 
 	chBs1Done := make(chan error, 1)
-	computeBS1 := func() {
-		<-chWireValuesB
-		if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chBs1Done <- err
-			close(chBs1Done)
-			return
-		}
-		bs1.AddMixed(&pk.G1.Beta)
-		bs1.AddMixed(&deltas[1])
-		chBs1Done <- nil
-	}
+	// computeBS1 := func() {
+	// 	<-chWireValuesB
+	// 	if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+	// 		chBs1Done <- err
+	// 		close(chBs1Done)
+	// 		return
+	// 	}
+	// 	bs1.AddMixed(&pk.G1.Beta)
+	// 	bs1.AddMixed(&deltas[1])
+	// 	chBs1Done <- nil
+	// }
 
 	chArDone := make(chan error, 1)
-	computeAR1 := func() {
-		<-chWireValuesA
-		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chArDone <- err
-			close(chArDone)
-			return
-		}
-		ar.AddMixed(&pk.G1.Alpha)
-		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(&ar)
-		chArDone <- nil
-	}
+	// computeAR1 := func() {
+	// 	<-chWireValuesA
+	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+	// 		chArDone <- err
+	// 		close(chArDone)
+	// 		return
+	// 	}
+	// 	ar.AddMixed(&pk.G1.Alpha)
+	// 	ar.AddMixed(&deltas[0])
+	// 	proof.Ar.FromJacobian(&ar)
+	// 	chArDone <- nil
+	// }
 
 	chKrsDone := make(chan error, 1)
 
@@ -450,8 +450,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// schedule our proof part computations
 	go computeKRS()
-	go computeAR1()
-	go computeBS1()
+	// go computeAR1()
+	// go computeBS1()
 	// if err := computeBS2(); err != nil {
 	// 	return nil, err
 	// }
