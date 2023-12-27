@@ -218,10 +218,21 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	// H (witness reduction / FFT part)
-	var h []fr.Element
+	// var h []fr.Element
+	// chHDone := make(chan struct{}, 1)
+	// go func() {
+	// 	h = computeh(solution.A, solution.B, solution.C, &pk.Domain)
+	// 	solution.A = nil
+	// 	solution.B = nil
+	// 	solution.C = nil
+	// 	chHDone <- struct{}{}
+	// }()
+
+	// H (witness reduction / FFT part)
+	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeh(solution.A, solution.B, solution.C, &pk.Domain)
+		h = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -305,59 +316,109 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	chKrsDone := make(chan error, 1)
-	computeKRS := func() {
-		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-		// however, having similar lengths for our tasks helps with parallelism
-
+	computeKRS := func() error {
 		var krs, krs2, p1 curve.G1Jac
-		chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-		go func() {
-			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
-			chKrs2Done <- err
-		}()
+
+		// check for small circuits as iciclegnark doesn't handle zero sizes well
+		if len(pk.G1.Z) > 0 {
+			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
+				return err
+			}
+		}
 
 		// filter the wire values if needed
 		// TODO Perf @Tabaie worst memory allocation offender
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chKrsDone <- err
-			return
+		// filter zero/infinity points since icicle doesn't handle them
+		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
+		for _, indexToRemove := range pk.InfinityPointIndicesK {
+			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
 		}
+
+		scalarBytes := len(scalars) * fr.Bytes
+
+		copyDone := make(chan unsafe.Pointer, 1)
+		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
+		scalars_d := <-copyDone
+
+		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
+		iciclegnark.FreeDevicePointer(scalars_d)
+
+		if err != nil {
+			return err
+		}
+
 		krs.AddMixed(&deltas[2])
-		n := 3
-		for n != 0 {
-			select {
-			case err := <-chKrs2Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				krs.AddAssign(&krs2)
-			case err := <-chArDone:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&ar, &s)
-				krs.AddAssign(&p1)
-			case err := <-chBs1Done:
-				if err != nil {
-					chKrsDone <- err
-					return
-				}
-				p1.ScalarMultiplication(&bs1, &r)
-				krs.AddAssign(&p1)
-			}
-			n--
-		}
+
+		krs.AddAssign(&krs2)
+
+		p1.ScalarMultiplication(&ar, &s)
+		krs.AddAssign(&p1)
+
+		p1.ScalarMultiplication(&bs1, &r)
+		krs.AddAssign(&p1)
 
 		proof.Krs.FromJacobian(&krs)
-		chKrsDone <- nil
+
+		return nil
 	}
+	// computeKRS := func() {
+	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+	// 	// however, having similar lengths for our tasks helps with parallelism
+
+	// 	var krs, krs2, p1 curve.G1Jac
+	// 	chKrs2Done := make(chan error, 1)
+	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+	// 	go func() {
+	// 		_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+	// 		chKrs2Done <- err
+	// 	}()
+
+	// 	// filter the wire values if needed
+	// 	// TODO Perf @Tabaie worst memory allocation offender
+	// 	toRemove := commitmentInfo.GetPrivateCommitted()
+	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+	// 	_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+
+	// 	if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+	// 		chKrsDone <- err
+	// 		return
+	// 	}
+	// 	krs.AddMixed(&deltas[2])
+	// 	n := 3
+	// 	for n != 0 {
+	// 		select {
+	// 		case err := <-chKrs2Done:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			krs.AddAssign(&krs2)
+	// 		case err := <-chArDone:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			p1.ScalarMultiplication(&ar, &s)
+	// 			krs.AddAssign(&p1)
+	// 		case err := <-chBs1Done:
+	// 			if err != nil {
+	// 				chKrsDone <- err
+	// 				return
+	// 			}
+	// 			p1.ScalarMultiplication(&bs1, &r)
+	// 			krs.AddAssign(&p1)
+	// 		}
+	// 		n--
+	// 	}
+
+	// 	proof.Krs.FromJacobian(&krs)
+	// 	chKrsDone <- nil
+	// }
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
