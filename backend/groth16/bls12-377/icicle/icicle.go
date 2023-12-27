@@ -19,6 +19,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
+	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
@@ -217,15 +218,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	// H (witness reduction / FFT part)
-	// var h []fr.Element
+	var h []fr.Element
 	chHDone := make(chan struct{}, 1)
-	// go func() {
-	// 	h = computeh(solution.A, solution.B, solution.C, &pk.Domain)
-	// 	solution.A = nil
-	// 	solution.B = nil
-	// 	solution.C = nil
-	// 	chHDone <- struct{}{}
-	// }()
+	go func() {
+		h = computeh(solution.A, solution.B, solution.C, &pk.Domain)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		chHDone <- struct{}{}
+	}()
 
 	// H (witness reduction / FFT part)
 	// var h unsafe.Pointer
@@ -281,48 +282,48 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
-	// deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	// var bs1, ar curve.G1Jac
+	var bs1, ar curve.G1Jac
 
 	n := runtime.NumCPU()
 
-	// chBs1Done := make(chan error, 1)
-	// computeBS1 := func() {
-	// 	<-chWireValuesB
-	// 	if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chBs1Done <- err
-	// 		close(chBs1Done)
-	// 		return
-	// 	}
-	// 	bs1.AddMixed(&pk.G1.Beta)
-	// 	bs1.AddMixed(&deltas[1])
-	// 	chBs1Done <- nil
-	// }
+	chBs1Done := make(chan error, 1)
+	computeBS1 := func() {
+		<-chWireValuesB
+		if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chBs1Done <- err
+			close(chBs1Done)
+			return
+		}
+		bs1.AddMixed(&pk.G1.Beta)
+		bs1.AddMixed(&deltas[1])
+		chBs1Done <- nil
+	}
 
-	// chArDone := make(chan error, 1)
-	// computeAR1 := func() {
-	// 	<-chWireValuesA
-	// 	if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chArDone <- err
-	// 		close(chArDone)
-	// 		return
-	// 	}
-	// 	ar.AddMixed(&pk.G1.Alpha)
-	// 	ar.AddMixed(&deltas[0])
-	// 	proof.Ar.FromJacobian(&ar)
-	// 	chArDone <- nil
-	// }
+	chArDone := make(chan error, 1)
+	computeAR1 := func() {
+		<-chWireValuesA
+		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chArDone <- err
+			close(chArDone)
+			return
+		}
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(&ar)
+		chArDone <- nil
+	}
 
 	chKrsDone := make(chan error, 1)
-	//gpu
+
 	// computeKRS := func() error {
 	// 	var krs, krs2, p1 curve.G1Jac
 	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
 	// 	// check for small circuits as iciclegnark doesn't handle zero sizes well
 	// 	if len(pk.G1.Z) > 0 {
-	// 		log.Debug().Msg("11111")
+
 	// 		if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
 	// 			return err
 	// 		}
@@ -333,21 +334,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// 	toRemove := commitmentInfo.GetPrivateCommitted()
 	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
 	// 	scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
-	// 	log.Debug().Msg("22222")
 
 	// 	// filter zero/infinity points since icicle doesn't handle them
 	// 	// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
 	// 	for _, indexToRemove := range pk.InfinityPointIndicesK {
 	// 		scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
 	// 	}
-	// 	log.Debug().Msg("33333")
 
 	// 	scalarBytes := len(scalars) * fr.Bytes
 
 	// 	copyDone := make(chan unsafe.Pointer, 1)
 	// 	iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
 	// 	scalars_d := <-copyDone
-	// 	log.Debug().Msg("44444")
 
 	// 	krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 	// 	iciclegnark.FreeDevicePointer(scalars_d)
@@ -355,7 +353,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// 	if err != nil {
 	// 		return err
 	// 	}
-	// 	log.Debug().Msg("55555")
 
 	// 	krs.AddMixed(&deltas[2])
 
@@ -366,65 +363,64 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// 	p1.ScalarMultiplication(&bs1, &r)
 	// 	krs.AddAssign(&p1)
-	// 	log.Debug().Msg("66666")
 
 	// 	proof.Krs.FromJacobian(&krs)
 
 	// 	return nil
 	// }
-	// computeKRS := func() {
-	// 	// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
-	// 	// however, having similar lengths for our tasks helps with parallelism
+	computeKRS := func() {
+		// we could NOT split the Krs multiExp in 2, and just append pk.G1.K and pk.G1.Z
+		// however, having similar lengths for our tasks helps with parallelism
 
-	// 	var krs, krs2, p1 curve.G1Jac
-	// 	chKrs2Done := make(chan error, 1)
-	// 	sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
-	// 	go func() {
-	// 		_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
-	// 		chKrs2Done <- err
-	// 	}()
+		var krs, krs2, p1 curve.G1Jac
+		chKrs2Done := make(chan error, 1)
+		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+		go func() {
+			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+			chKrs2Done <- err
+		}()
 
-	// 	// filter the wire values if needed
-	// 	// TODO Perf @Tabaie worst memory allocation offender
-	// 	toRemove := commitmentInfo.GetPrivateCommitted()
-	// 	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-	// 	_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		// filter the wire values if needed
+		// TODO Perf @Tabaie worst memory allocation offender
+		toRemove := commitmentInfo.GetPrivateCommitted()
+		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-	// 	if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-	// 		chKrsDone <- err
-	// 		return
-	// 	}
-	// 	krs.AddMixed(&deltas[2])
-	// 	n := 3
-	// 	for n != 0 {
-	// 		select {
-	// 		case err := <-chKrs2Done:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			krs.AddAssign(&krs2)
-	// 		case err := <-chArDone:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			p1.ScalarMultiplication(&ar, &s)
-	// 			krs.AddAssign(&p1)
-	// 		case err := <-chBs1Done:
-	// 			if err != nil {
-	// 				chKrsDone <- err
-	// 				return
-	// 			}
-	// 			p1.ScalarMultiplication(&bs1, &r)
-	// 			krs.AddAssign(&p1)
-	// 		}
-	// 		n--
-	// 	}
+		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chKrsDone <- err
+			return
+		}
+		krs.AddMixed(&deltas[2])
+		n := 3
+		for n != 0 {
+			select {
+			case err := <-chKrs2Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				krs.AddAssign(&krs2)
+			case err := <-chArDone:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&ar, &s)
+				krs.AddAssign(&p1)
+			case err := <-chBs1Done:
+				if err != nil {
+					chKrsDone <- err
+					return
+				}
+				p1.ScalarMultiplication(&bs1, &r)
+				krs.AddAssign(&p1)
+			}
+			n--
+		}
 
-	// 	proof.Krs.FromJacobian(&krs)
-	// 	chKrsDone <- nil
-	// }
+		proof.Krs.FromJacobian(&krs)
+		chKrsDone <- nil
+	}
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
@@ -453,9 +449,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chHDone
 
 	// schedule our proof part computations
-	// go computeKRS()
-	// go computeAR1()
-	// go computeBS1()
+	go computeKRS()
+	go computeAR1()
+	go computeBS1()
 	if err := computeBS2(); err != nil {
 		return nil, err
 	}

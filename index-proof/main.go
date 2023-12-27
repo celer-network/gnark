@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -72,8 +73,7 @@ func main() {
 
 	// groth16: Prove & Verify
 	for i := 0; i < 10; i++ {
-		// proof, err := groth16.Prove(ccs, pk, witness, backend.WithIcicleAcceleration())
-		proof, err := groth16.Prove(ccs, pk, witness)
+		proof, err := groth16.Prove(ccs, pk, witness, backend.WithIcicleAcceleration())
 
 		if err != nil {
 			debug.PrintStack()
