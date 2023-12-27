@@ -229,15 +229,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}()
 
 	// H (witness reduction / FFT part)
-	// var h unsafe.Pointer
+	var hh unsafe.Pointer
 	// chHDone := make(chan struct{}, 1)
-	// go func() {
-	// 	h = computeH(solution.A, solution.B, solution.C, pk)
-	// 	solution.A = nil
-	// 	solution.B = nil
-	// 	solution.C = nil
-	// 	chHDone <- struct{}{}
-	// }()
+	go func() {
+		hh = computeH(solution.A, solution.B, solution.C, pk)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		chHDone <- struct{}{}
+	}()
+	fmt.Println(hh)
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
