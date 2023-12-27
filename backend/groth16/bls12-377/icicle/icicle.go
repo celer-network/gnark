@@ -484,8 +484,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// wait for all parts of the proof to be computed.
 	if err := <-chKrsDone; err != nil {
+		log.Debug().Msg("????")
+
 		return nil, err
 	}
+
+	log.Debug().Msg("&&&&")
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
