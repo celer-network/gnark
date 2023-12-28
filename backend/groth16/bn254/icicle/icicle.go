@@ -30,6 +30,7 @@ import (
 const HasIcicle = true
 
 func (pk *ProvingKey) setupDevicePointers() error {
+	fmt.Println("start setupDevicePointers in 377")
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -132,6 +133,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
+	fmt.Println("start Prove in 377")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
