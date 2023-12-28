@@ -3,6 +3,7 @@ package bw6761test
 import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
@@ -103,7 +104,7 @@ func TestBw6761(t *testing.T) {
 	assert.NoError(err)
 	pk, vk, err := groth16.Setup(ccs)
 	assert.NoError(err)
-	proof, err := groth16.Prove(ccs, pk, outerWitness)
+	proof, err := groth16.Prove(ccs, pk, outerWitness, backend.WithIcicleAcceleration())
 	assert.NoError(err)
 	err = groth16.Verify(proof, vk, outerPubWitness)
 	assert.NoError(err)
