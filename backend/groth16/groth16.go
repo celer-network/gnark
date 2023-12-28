@@ -53,6 +53,7 @@ import (
 	icicle_bn254 "github.com/consensys/gnark/backend/groth16/bn254/icicle"
 	groth16_bw6633 "github.com/consensys/gnark/backend/groth16/bw6-633"
 	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
+	icicle_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761/icicle"
 )
 
 type groth16Object interface {
@@ -186,6 +187,9 @@ func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.
 		return groth16_bn254.Prove(_r1cs, pk.(*groth16_bn254.ProvingKey), fullWitness, opts...)
 
 	case *cs_bw6761.R1CS:
+		if icicle_bw6761.HasIcicle {
+			return icicle_bw6761.Prove(_r1cs, pk.(*icicle_bw6761.ProvingKey), fullWitness, opts...)
+		}
 		return groth16_bw6761.Prove(_r1cs, pk.(*groth16_bw6761.ProvingKey), fullWitness, opts...)
 
 	case *cs_bls24317.R1CS:
@@ -249,8 +253,15 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 		}
 		return &pk, &vk, nil
 	case *cs_bw6761.R1CS:
-		var pk groth16_bw6761.ProvingKey
 		var vk groth16_bw6761.VerifyingKey
+		if icicle_bw6761.HasIcicle {
+			var pk icicle_bw6761.ProvingKey
+			if err := icicle_bw6761.Setup(_r1cs, &pk, &vk); err != nil {
+				return nil, nil, err
+			}
+			return &pk, &vk, nil
+		}
+		var pk groth16_bw6761.ProvingKey
 		if err := groth16_bw6761.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
 		}
@@ -318,6 +329,13 @@ func DummySetup(r1cs constraint.ConstraintSystem) (ProvingKey, error) {
 		}
 		return &pk, nil
 	case *cs_bw6761.R1CS:
+		if icicle_bw6761.HasIcicle {
+			var pk icicle_bw6761.ProvingKey
+			if err := icicle_bw6761.DummySetup(_r1cs, &pk); err != nil {
+				return nil, err
+			}
+			return &pk, nil
+		}
 		var pk groth16_bw6761.ProvingKey
 		if err := groth16_bw6761.DummySetup(_r1cs, &pk); err != nil {
 			return nil, err
@@ -365,6 +383,9 @@ func NewProvingKey(curveID ecc.ID) ProvingKey {
 		pk = &groth16_bls12381.ProvingKey{}
 	case ecc.BW6_761:
 		pk = &groth16_bw6761.ProvingKey{}
+		if icicle_bw6761.HasIcicle {
+			pk = &icicle_bw6761.ProvingKey{}
+		}
 	case ecc.BLS24_317:
 		pk = &groth16_bls24317.ProvingKey{}
 	case ecc.BLS24_315:

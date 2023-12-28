@@ -18,14 +18,14 @@ import (
 
 func main() {
 	// generate CompiledConstraintSystem
-	ccs, err := frontend.Compile(ecc.BLS12_377.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
+	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
 	if err != nil {
 		log.Fatal("frontend.Compile")
 	}
 
 	// groth16 zkSNARK: Setup
-	var pk = groth16.NewProvingKey(ecc.BLS12_377)
-	var vk = groth16.NewVerifyingKey(ecc.BLS12_377)
+	var pk = groth16.NewProvingKey(ecc.BW6_761)
+	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
 
 	log.Println("pk load done start.")
 	/*pk, vk, err = groth16.Setup(ccs)
@@ -68,7 +68,7 @@ func main() {
 		RlpString: witnessInput,
 	}
 
-	witness, _ := frontend.NewWitness(&assignment, ecc.BLS12_377.ScalarField())
+	witness, _ := frontend.NewWitness(&assignment, ecc.BW6_761.ScalarField())
 	publicWitness, _ := witness.Public()
 
 	// groth16: Prove & Verify
