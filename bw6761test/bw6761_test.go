@@ -9,12 +9,15 @@ import (
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/logger"
 	"github.com/consensys/gnark/std/algebra"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
 	"github.com/consensys/gnark/std/math/emulated"
 	regroth16 "github.com/consensys/gnark/std/recursion/groth16"
 	"github.com/consensys/gnark/test"
+	"github.com/rs/zerolog"
 	"math/big"
+	"os"
 	"testing"
 )
 
@@ -73,6 +76,7 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 }
 
 func TestBw6761(t *testing.T) {
+	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
 	assert := test.NewAssert(t)
 	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
