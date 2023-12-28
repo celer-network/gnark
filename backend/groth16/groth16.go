@@ -20,7 +20,6 @@
 package groth16
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -173,7 +172,6 @@ func Verify(proof Proof, vk VerifyingKey, publicWitness witness.Witness, opts ..
 func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (Proof, error) {
 	switch _r1cs := r1cs.(type) {
 	case *cs_bls12377.R1CS:
-		fmt.Printf("icicle_bls12377.HasIcicle: %v", icicle_bls12377.HasIcicle)
 		if icicle_bls12377.HasIcicle {
 			return icicle_bls12377.Prove(_r1cs, pk.(*icicle_bls12377.ProvingKey), fullWitness, opts...)
 		}
@@ -183,7 +181,6 @@ func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.
 		return groth16_bls12381.Prove(_r1cs, pk.(*groth16_bls12381.ProvingKey), fullWitness, opts...)
 
 	case *cs_bn254.R1CS:
-		fmt.Printf("icicle_bn254.HasIcicle: %v", icicle_bn254.HasIcicle)
 		if icicle_bn254.HasIcicle {
 			return icicle_bn254.Prove(_r1cs, pk.(*icicle_bn254.ProvingKey), fullWitness, opts...)
 		}
