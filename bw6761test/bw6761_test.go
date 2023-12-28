@@ -94,15 +94,16 @@ func TestBw6761(t *testing.T) {
 		VerifyingKey: circuitVk,
 	}
 
+	outerWitness, err := frontend.NewWitness(outerAssignment, ecc.BW6_761.ScalarField())
+	assert.NoError(err)
+	outerPubWitness, err := outerWitness.Public()
+	assert.NoError(err)
+
 	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, outerCircuit)
 	assert.NoError(err)
 	pk, vk, err := groth16.Setup(ccs)
 	assert.NoError(err)
-	outerWitness, err := frontend.NewWitness(outerAssignment, ecc.BW6_761.ScalarField())
-	assert.NoError(err)
 	proof, err := groth16.Prove(ccs, pk, outerWitness)
-	assert.NoError(err)
-	outerPubWitness, err := outerWitness.Public()
 	assert.NoError(err)
 	err = groth16.Verify(proof, vk, outerPubWitness)
 	assert.NoError(err)
