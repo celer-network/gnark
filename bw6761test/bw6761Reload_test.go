@@ -79,8 +79,6 @@ func LoadOrGenCcsBW6761ForTest(assert *test.Assert, filename string) *cs_bw6761.
 	loadCcs := new(cs_bw6761.R1CS)
 	err := ReadCcs(filename, loadCcs)
 	assert.NoError(err)
-	err = ReadCcs(filename, loadCcs)
-	assert.NoError(err)
 	return loadCcs
 }
 
