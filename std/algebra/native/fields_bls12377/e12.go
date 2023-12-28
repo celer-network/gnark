@@ -634,3 +634,9 @@ func (e *E12) AssertIsEqual(api frontend.API, other E12) {
 	e.C0.AssertIsEqual(api, other.C0)
 	e.C1.AssertIsEqual(api, other.C1)
 }
+
+func (e *E12) IsEqual(api frontend.API, other E12) frontend.Variable {
+	c0 := e.C0.IsEqual(api, other.C0)
+	c1 := e.C1.IsEqual(api, other.C1)
+	return api.And(c0, c1)
+}

@@ -82,4 +82,6 @@ type Pairing[G1El G1ElementT, G2El G2ElementT, GtEl GtElementT] interface {
 
 	// AssertIsEqual asserts the equality of the inputs.
 	AssertIsEqual(*GtEl, *GtEl)
+
+	IsEqual(*GtEl, *GtEl) frontend.Variable
 }
