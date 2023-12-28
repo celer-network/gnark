@@ -1,6 +1,6 @@
 //go:build icicle
 
-package icicle_bn254
+package icicle_bw6761
 
 import (
 	"fmt"
@@ -9,22 +9,22 @@ import (
 	"time"
 	"unsafe"
 
-	curve "github.com/consensys/gnark-crypto/ecc/bn254"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/pedersen"
+	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fp"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fp/hash_to_field"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr/pedersen"
 	"github.com/consensys/gnark/backend"
-	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
+	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
-	cs "github.com/consensys/gnark/constraint/bn254"
+	cs "github.com/consensys/gnark/constraint/bw6-761"
 	"github.com/consensys/gnark/constraint/solver"
 	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
-	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
+	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bw6761"
 )
 
 const HasIcicle = true
@@ -130,8 +130,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	return nil
 }
 
-// Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
-func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
+func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bw6761.Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -140,7 +139,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
 	if opt.Accelerator != "icicle" {
-		return groth16_bn254.Prove(r1cs, &pk.ProvingKey, fullWitness, opts...)
+		return groth16_bw6761.Prove(r1cs, &pk.ProvingKey, fullWitness, opts...)
 	}
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	if pk.deviceInfo == nil {
@@ -152,13 +151,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
 
-	proof := &groth16_bn254.Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
+	proof := &groth16_bw6761.Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
 
 	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
 
 	privateCommittedValues := make([][]fr.Element, len(commitmentInfo))
 
+	// override hints
 	bsb22ID := solver.GetHintID(fcs.Bsb22CommitmentComputePlaceholder)
+
 	solverOpts = append(solverOpts, solver.OverrideHint(bsb22ID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
 		i := int(in[0].Int64())
 		in = in[1:]
@@ -186,35 +187,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		res.BigInt(out[0])
 		return nil
 	}))
-	// for i := range commitmentInfo {
-	// 	solverOpts = append(solverOpts, solver.OverrideHint(commitmentInfo[i].HintID, func(i int) solver.Hint {
-	// 		return func(_ *big.Int, in []*big.Int, out []*big.Int) error {
-	// 			privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
-	// 			hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
-	// 			committed := in[len(hashed):]
-	// 			for j, inJ := range committed {
-	// 				privateCommittedValues[i][j].SetBigInt(inJ)
-	// 			}
-
-	// 			var err error
-	// 			if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
-	// 				return err
-	// 			}
-
-	// 			opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
-	// 			hashBts := opt.HashToFieldFn.Sum(nil)
-	// 			opt.HashToFieldFn.Reset()
-	// 			nbBuf := fr.Bytes
-	// 			if opt.HashToFieldFn.Size() < fr.Bytes {
-	// 				nbBuf = opt.HashToFieldFn.Size()
-	// 			}
-	// 			var res fr.Element
-	// 			res.SetBytes(hashBts[:nbBuf])
-	// 			res.BigInt(out[0])
-	// 			return err
-	// 		}
-	// 	}(i)))
-	// }
 
 	if r1cs.GkrInfo.Is() {
 		var gkrData cs.GkrSolvingData
@@ -242,7 +214,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
@@ -282,6 +253,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		close(chWireValuesA)
 	}()
+
 	go func() {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
@@ -451,10 +423,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	return proof, nil
 }
 
-// if len(toRemove) == 0, returns slice
-// else, returns a new slice without the indexes in toRemove. The first value in the slice is taken as indexes as sliceFirstIndex
-// this assumes len(slice) > len(toRemove)
-// filterHeap modifies toRemove
 func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr.Element) {
 
 	if len(toRemove) == 0 {
