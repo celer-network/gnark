@@ -139,6 +139,10 @@ func (pr Pairing) AssertIsEqual(x, y *GTEl) {
 	pr.Ext6.AssertIsEqual(x, y)
 }
 
+func (pr Pairing) IsEqual(x, y *GTEl) frontend.Variable {
+	return 0
+}
+
 // seed x₀=9586122913090633729
 //
 // x₀+1 in binary (64 bits) padded with 0s

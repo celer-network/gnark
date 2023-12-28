@@ -48,6 +48,9 @@ func GetSecp256k1Params() CurveParams {
 // GetBN254Params returns the curve parameters for the curve BN254 (alt_bn128).
 // When initialising new curve, use the base field [emulated.BN254Fp] and scalar
 // field [emulated.BN254Fr].
+// GetBN254Params returns the curve parameters for the curve BN254 (alt_bn128).
+// When initialising new curve, use the base field [emulated.BN254Fp] and scalar
+// field [emulated.BN254Fr].
 func GetBN254Params() CurveParams {
 	_, _, g1aff, _ := bn254.Generators()
 	lambda, _ := new(big.Int).SetString("4407920970296243842393367215006156084916469457145843978461", 10)

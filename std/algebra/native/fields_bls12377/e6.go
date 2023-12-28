@@ -301,6 +301,15 @@ func (e *E6) AssertIsEqual(api frontend.API, other E6) {
 	e.B2.AssertIsEqual(api, other.B2)
 }
 
+func (e *E6) IsEqual(api frontend.API, other E6) frontend.Variable {
+	b0 := e.B0.IsEqual(api, other.B0)
+	b1 := e.B1.IsEqual(api, other.B1)
+	b2 := e.B2.IsEqual(api, other.B2)
+
+	b01 := api.And(b0, b1)
+	return api.And(b01, b2)
+}
+
 // MulByE2 multiplies an element in E6 by an element in E2
 func (e *E6) MulByE2(api frontend.API, e1 E6, e2 E2) *E6 {
 	e.B0.Mul(api, e1.B0, e2)

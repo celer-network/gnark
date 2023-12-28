@@ -134,11 +134,11 @@ func computeP384Table() [][2]*big.Int {
 
 func computeBW6761Table() [][2]*big.Int {
 	Gjac, _, _, _ := bw6761.Generators()
-	table := make([][2]*big.Int, 377)
+	table := make([][2]*big.Int, 761)
 	tmp := new(bw6761.G1Jac).Set(&Gjac)
 	aff := new(bw6761.G1Affine)
 	jac := new(bw6761.G1Jac)
-	for i := 1; i < 377; i++ {
+	for i := 1; i < 761; i++ {
 		tmp = tmp.Double(tmp)
 		switch i {
 		case 1, 2:

@@ -113,6 +113,39 @@ func (f *Field[T]) computeQuoHint(x *Element[T]) (z *Element[T], err error) {
 	return f.packLimbs(limbs, false), nil
 }
 
+// computeRemHint packs inputs for the RemHint hint function.
+// sets z to the remainder x%y for y != 0 and returns z.
+func (f *Field[T]) computeRemHint(x, y *Element[T]) (z *Element[T], err error) {
+	var fp T
+	hintInputs := []frontend.Variable{
+		fp.BitsPerLimb(),
+		len(x.Limbs),
+	}
+	hintInputs = append(hintInputs, x.Limbs...)
+	hintInputs = append(hintInputs, y.Limbs...)
+	limbs, err := f.api.NewHint(RemHint, int(len(y.Limbs)), hintInputs...)
+	if err != nil {
+		return nil, err
+	}
+	return f.packLimbs(limbs, true), nil
+}
+
+// RemHint sets z to the remainder x%y for y != 0 and returns z.
+// If y == 0, returns an error.
+// Rem implements truncated modulus (like Go); see QuoRem for more details.
+func RemHint(_ *big.Int, inputs []*big.Int, outputs []*big.Int) error {
+	nbBits, _, x, y, err := parseHintDivInputs(inputs)
+	if err != nil {
+		return err
+	}
+	r := new(big.Int)
+	r.Rem(x, y)
+	if err := decompose(r, nbBits, outputs); err != nil {
+		return fmt.Errorf("decompose remainder: %w", err)
+	}
+	return nil
+}
+
 // QuoHint sets z to the quotient x/y for y != 0 and returns z.
 // If y == 0, returns an error.
 // Quo implements truncated division (like Go); see QuoRem for more details.

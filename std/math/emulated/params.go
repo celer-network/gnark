@@ -3,6 +3,7 @@ package emulated
 import (
 	"math/big"
 
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/std/math/emulated/emparams"
 )
 
@@ -40,3 +41,11 @@ type (
 	BW6761Fp    = emparams.BW6761Fp
 	BW6761Fr    = emparams.BW6761Fr
 )
+
+// added by patrick
+type BLS12377Fr struct{}
+
+func (fr BLS12377Fr) NbLimbs() uint     { return 4 }
+func (fr BLS12377Fr) BitsPerLimb() uint { return 64 }
+func (fr BLS12377Fr) IsPrime() bool     { return true }
+func (fr BLS12377Fr) Modulus() *big.Int { return ecc.BLS12_377.ScalarField() }

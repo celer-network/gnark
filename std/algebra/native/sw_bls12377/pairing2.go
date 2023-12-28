@@ -70,7 +70,15 @@ func (c *Curve) Add(P, Q *G1Affine) *G1Affine {
 		X: P.X,
 		Y: P.Y,
 	}
+
+	qxZ := c.api.IsZero(Q.X)
+	qyZ := c.api.IsZero(Q.Y)
+
 	res.AddAssign(c.api, *Q)
+
+	res.X = c.api.Select(qxZ, P.X, res.X)
+	res.Y = c.api.Select(qyZ, P.Y, res.Y)
+
 	return res
 }
 
@@ -287,6 +295,10 @@ func (p *Pairing) PairingCheck(P []*G1Affine, Q []*G2Affine) error {
 // AssertIsEqual asserts the equality of the target group elements.
 func (p *Pairing) AssertIsEqual(e1, e2 *GT) {
 	e1.AssertIsEqual(p.api, *e2)
+}
+
+func (p Pairing) IsEqual(e1, e2 *GT) frontend.Variable {
+	return e1.IsEqual(p.api, *e2)
 }
 
 // NewG1Affine allocates a witness from the native G1 element and returns it.
