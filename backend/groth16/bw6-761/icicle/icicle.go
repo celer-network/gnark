@@ -4,8 +4,11 @@ package icicle_bw6761
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bw6-761/fr/fft"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"time"
 	"unsafe"
 
@@ -214,9 +217,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
+	var h_cpu []fr.Element
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
+		h_cpu = computeHOnCpu(solution.A, solution.B, solution.C, &pk.Domain)
 		h = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
@@ -229,8 +234,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var wireValuesADevice, wireValuesBDevice iciclegnark.OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
+	wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -254,8 +259,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 
+	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 	go func() {
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -298,12 +303,21 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
+	n := runtime.NumCPU()
+
 	computeBS1 := func() error {
 		<-chWireValuesB
+
+		var bs1Cpu curve.G1Jac
+		if _, err = bs1Cpu.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			return err
+		}
 
 		if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
 			return err
 		}
+
+		fmt.Printf("icicleRes == bs1: %+v \n", bs1Cpu.Equal(&bs1))
 
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
@@ -508,4 +522,49 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	iciclegnark.ReverseScalars(h, n)
 
 	return h
+}
+
+func computeHOnCpu(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+
+	n := len(a)
+
+	// add padding to ensure input length is domain cardinality
+	padding := make([]fr.Element, int(domain.Cardinality)-n)
+	a = append(a, padding...)
+	b = append(b, padding...)
+	c = append(c, padding...)
+	n = len(a)
+
+	domain.FFTInverse(a, fft.DIF)
+	domain.FFTInverse(b, fft.DIF)
+	domain.FFTInverse(c, fft.DIF)
+
+	domain.FFT(a, fft.DIT, fft.OnCoset())
+	domain.FFT(b, fft.DIT, fft.OnCoset())
+	domain.FFT(c, fft.DIT, fft.OnCoset())
+
+	var den, one fr.Element
+	one.SetOne()
+	den.Exp(domain.FrMultiplicativeGen, big.NewInt(int64(domain.Cardinality)))
+	den.Sub(&den, &one).Inverse(&den)
+
+	// h = ifft_coset(ca o cb - cc)
+	// reusing a to avoid unnecessary memory allocation
+	utils.Parallelize(n, func(start, end int) {
+		for i := start; i < end; i++ {
+			a[i].Mul(&a[i], &b[i]).
+				Sub(&a[i], &c[i]).
+				Mul(&a[i], &den)
+		}
+	})
+
+	// ifft_coset
+	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
+
+	return a
 }
