@@ -217,11 +217,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	var h_cpu []fr.Element
+	//var h_cpu []fr.Element
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h_cpu = computeHOnCpu(solution.A, solution.B, solution.C, &pk.Domain)
+		//h_cpu = computeHOnCpu(solution.A, solution.B, solution.C, &pk.Domain)
 		h = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
@@ -328,9 +328,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeAR1 := func() error {
 		<-chWireValuesA
 
+		var arCpu curve.G1Jac
+		if _, err := arCpu.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			return err
+		}
+
 		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
 			return err
 		}
+		fmt.Printf("icicleRes == ar: %+v \n", arCpu.Equal(&ar))
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
