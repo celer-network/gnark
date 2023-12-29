@@ -35,3 +35,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/ingonyama-zk/iciclegnark => github.com/liuxiaobleach/iciclegnark v0.0.0-20231229031112-fb89dc3d1197

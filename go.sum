@@ -29,12 +29,12 @@ github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lTo
 github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6/go.mod h1:xQig96I1VNBDIWGCdTt54nHt6EeI639SmHycLYL7FkA=
 github.com/ingonyama-zk/icicle v0.1.0 h1:9zbHaYv8/4g3HWRabBCpeH+64U8GJ99K1qeqE2jO6LM=
 github.com/ingonyama-zk/icicle v0.1.0/go.mod h1:kAK8/EoN7fUEmakzgZIYdWy1a2rBnpCaZLqSHwZWxEk=
-github.com/ingonyama-zk/iciclegnark v0.1.1 h1:BugVGAkKFu2uy02cRsgQdsE18VaFIJz55dBeZQJl4R0=
-github.com/ingonyama-zk/iciclegnark v0.1.1/go.mod h1:g17CDuMfNBiN4hhZ4aA0rGF24Abv5GBFHJqE7aLxaZQ=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/leanovate/gopter v0.2.9 h1:fQjYxZaynp97ozCzfOyOuAGOU4aU/z37zf/tOujFk7c=
 github.com/leanovate/gopter v0.2.9/go.mod h1:U2L/78B+KVFIx2VmW6onHJQzXtFb+p5y3y2Sh+Jxxv8=
+github.com/liuxiaobleach/iciclegnark v0.0.0-20231229031112-fb89dc3d1197 h1:ZEHWnYJRs3fp2rHdAgvLThQ8P0BRhUZ6oCEVnVHWeik=
+github.com/liuxiaobleach/iciclegnark v0.0.0-20231229031112-fb89dc3d1197/go.mod h1:g17CDuMfNBiN4hhZ4aA0rGF24Abv5GBFHJqE7aLxaZQ=
 github.com/mattn/go-colorable v0.1.12/go.mod h1:u5H1YNBxpqRaxsYJYSkiCWKzEfiAb1Gb520KVy5xxl4=
 github.com/mattn/go-colorable v0.1.13 h1:fFA4WZxdEF4tXPZVKMLwD8oUnCTTo08duU7wxecdEvA=
 github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
