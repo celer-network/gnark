@@ -217,11 +217,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	//var h_cpu []fr.Element
+	var h_cpu []fr.Element
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		//h_cpu = computeHOnCpu(solution.A, solution.B, solution.C, &pk.Domain)
+		h_cpu = computeHOnCpu(solution.A, solution.B, solution.C, &pk.Domain)
 		h = computeH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
@@ -346,11 +346,16 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeKRS := func() error {
+		var krs_cpu, krs2_cpu curve.G1Jac
 		var krs, krs2, p1 curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 
 		// check for small circuits as iciclegnark doesn't handle zero sizes well
 		if len(pk.G1.Z) > 0 {
+			_, err = krs2_cpu.MultiExp(pk.G1.Z, h_cpu[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+			if err != nil {
+				return err
+			}
 			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
 				return err
 			}
@@ -361,6 +366,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
 		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
@@ -374,12 +380,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
 		scalars_d := <-copyDone
 
+		if _, err = krs_cpu.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			return err
+		}
+
 		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 		iciclegnark.FreeDevicePointer(scalars_d)
 
 		if err != nil {
 			return err
 		}
+
+		fmt.Printf("icicleRes == krs: %+v \n", krs_cpu.Equal(&krs))
 
 		krs.AddMixed(&deltas[2])
 
@@ -398,12 +410,25 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	computeBS2 := func() error {
 		// Bs2 (1 multi exp G2 - size = len(wires))
+		var Bs_cpu curve.G2Jac
 		var Bs, deltaS curve.G2Jac
 
+		nbTasks := n
+		if nbTasks <= 16 {
+			// if we don't have a lot of CPUs, this may artificially split the MSM
+			nbTasks *= 2
+		}
+
 		<-chWireValuesB
+		if _, err = Bs_cpu.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+			return err
+		}
+
 		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
 			return err
 		}
+
+		fmt.Printf("icicleRes == Bs: %+v \n", Bs_cpu.Equal(&Bs))
 
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
