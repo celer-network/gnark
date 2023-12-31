@@ -32,7 +32,6 @@ var loopCounter = [64]int8{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 // MillerLoop computes the product of n miller loops (n can be 1)
 // ∏ᵢ { fᵢ_{x₀,Q}(P) }
 func MillerLoop(api frontend.API, P []G1Affine, Q []G2Affine) (GT, error) {
-
 	// check input size match
 	n := len(P)
 	if n == 0 || n != len(Q) {
@@ -282,9 +281,9 @@ func doubleAndAddStep(api frontend.API, p1, p2 *g2AffP) (g2AffP, *lineEvaluation
 		Sub(api, x3, p1.X).
 		Sub(api, x3, p2.X)
 
-		// omit y3 computation
+	// omit y3 computation
 
-		// compute line1
+	// compute line1
 	line1.R0 = l1
 	line1.R1.Mul(api, l1, p1.X).Sub(api, line1.R1, p1.Y)
 
