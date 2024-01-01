@@ -127,6 +127,27 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 	return err
 }
 
+type BatchOuterCircuit[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
+	Proof        []Proof[G1El, G2El]
+	VerifyingKey []VerifyingKey[G1El, G2El, GtEl]
+	InnerWitness []Witness[FR]
+	Commitments  []G1El
+}
+
+func (c *BatchOuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
+	curve, err := algebra.GetCurve[FR, G1El](api)
+	if err != nil {
+		return fmt.Errorf("new curve: %w", err)
+	}
+	pairing, err := algebra.GetPairing[G1El, G2El, GtEl](api)
+	if err != nil {
+		return fmt.Errorf("get pairing: %w", err)
+	}
+	verifier := NewVerifier(curve, pairing)
+	err = verifier.BatchAssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitments, c.InnerWitness)
+	return err
+}
+
 func TestBN254InBN254(t *testing.T) {
 	assert := test.NewAssert(t)
 	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BN254.ScalarField())
@@ -173,6 +194,54 @@ func TestBLS12InBW6(t *testing.T) {
 		VerifyingKey: circuitVk,
 	}
 	assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BW6_761))
+}
+
+func TestBatchBLS12InBW6(t *testing.T) {
+	assert := test.NewAssert(t)
+	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+
+	// outer proof
+	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
+	assert.NoError(err)
+	circuitWitness, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
+	assert.NoError(err)
+	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
+	assert.NoError(err)
+	commitment, err := ValueOfProofCommitment[sw_bls12377.G1Affine](innerProof)
+	assert.NoError(err)
+
+	batchSize := 20
+
+	var proofs []Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]
+	var witnesses []Witness[sw_bls12377.ScalarField]
+	var vks []VerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]
+	var commitments []sw_bls12377.G1Affine
+
+	for i := 0; i < batchSize; i++ {
+		proofs = append(proofs, circuitProof)
+		witnesses = append(witnesses, circuitWitness)
+		vks = append(vks, circuitVk)
+		commitments = append(commitments, commitment)
+	}
+
+	outerCircuit := &BatchOuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
+		InnerWitness: witnesses,
+		Proof:        proofs,
+		VerifyingKey: vks,
+		Commitments:  commitments,
+	}
+	outerAssignment := &BatchOuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
+		InnerWitness: witnesses,
+		Proof:        proofs,
+		VerifyingKey: vks,
+		Commitments:  commitments,
+	}
+
+	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
+	assert.NoError(err)
+	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, outerAssignment)
+	assert.NoError(err)
+	fmt.Printf("ccs, nb contractints: %d \n", ccs.GetNbConstraints())
 }
 
 type WitnessCircut struct {
