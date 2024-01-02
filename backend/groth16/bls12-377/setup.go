@@ -81,6 +81,10 @@ type VerifyingKey struct {
 	PublicAndCommitmentCommitted [][]int // indexes of public/commitment committed variables
 }
 
+func (v *VerifyingKey) GetE() curve.GT {
+	return v.e
+}
+
 // Setup constructs the SRS
 func Setup(r1cs *cs.R1CS, pk *ProvingKey, vk *VerifyingKey) error {
 	/*
