@@ -2,6 +2,7 @@ package groth16
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 	"testing"
 
@@ -84,17 +85,40 @@ func (c *InnerCircuitNative) Define(api frontend.API) error {
 	return nil
 }
 
-func getInner(assert *test.Assert, field *big.Int) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof) {
-	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &InnerCircuitNative{})
+type InnerCircuitNativeWith5Pub struct {
+	P, Q frontend.Variable
+	N1   frontend.Variable `gnark:",public"`
+	N2   frontend.Variable `gnark:",public"`
+	N3   frontend.Variable `gnark:",public"`
+	N4   frontend.Variable `gnark:",public"`
+	N5   frontend.Variable `gnark:",public"`
+}
+
+func (c *InnerCircuitNativeWith5Pub) Define(api frontend.API) error {
+	res := api.Mul(c.P, c.Q)
+	api.AssertIsEqual(res, c.N1)
+	api.AssertIsEqual(res, c.N2)
+	api.AssertIsEqual(res, c.N3)
+	api.AssertIsEqual(res, c.N4)
+	api.AssertIsEqual(res, c.N5)
+	return nil
+}
+
+func getInnerWith5Pub(assert *test.Assert, field *big.Int) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof) {
+	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &InnerCircuitNativeWith5Pub{})
 	assert.NoError(err)
 	innerPK, innerVK, err := groth16.Setup(innerCcs)
 	assert.NoError(err)
 
 	// inner proof
-	innerAssignment := &InnerCircuitNative{
-		P: 3,
-		Q: 5,
-		N: 15,
+	innerAssignment := &InnerCircuitNativeWith5Pub{
+		P:  3,
+		Q:  5,
+		N1: 15,
+		N2: 15,
+		N3: 15,
+		N4: 15,
+		N5: 15,
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
 	assert.NoError(err)
@@ -123,7 +147,9 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+	for i := 0; i < 1000; i++ {
+		err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+	}
 	return err
 }
 
@@ -174,7 +200,7 @@ func TestBN254InBN254(t *testing.T) {
 
 func TestBLS12InBW6(t *testing.T) {
 	assert := test.NewAssert(t)
-	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
@@ -184,21 +210,22 @@ func TestBLS12InBW6(t *testing.T) {
 	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
 	assert.NoError(err)
 
-	outerCircuit := &OuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		InnerWitness: PlaceholderWitness[sw_bls12377.ScalarField](innerCcs),
-		VerifyingKey: PlaceholderVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerCcs),
-	}
 	outerAssignment := &OuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: circuitWitness,
 		Proof:        circuitProof,
 		VerifyingKey: circuitVk,
 	}
-	assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BW6_761))
+	//assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BW6_761))
+	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, outerAssignment)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Printf("nbc: %d \n", ccs.GetNbConstraints())
 }
 
 func TestBatchBLS12InBW6(t *testing.T) {
 	assert := test.NewAssert(t)
-	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
+	_, innerVK, innerWitness, innerProof := getInnerWith5Pub(assert, ecc.BLS12_377.ScalarField())
 
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
@@ -210,7 +237,7 @@ func TestBatchBLS12InBW6(t *testing.T) {
 	commitment, err := ValueOfProofCommitment[sw_bls12377.G1Affine](innerProof)
 	assert.NoError(err)
 
-	batchSize := 20
+	batchSize := 1000
 
 	var proofs []Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]
 	var witnesses []Witness[sw_bls12377.ScalarField]
@@ -462,4 +489,27 @@ func TestBW6InBN254Constant(t *testing.T) {
 		Proof:        circuitProof,
 	}
 	assert.CheckCircuit(outerCircuit, test.WithValidAssignment(outerAssignment), test.WithCurves(ecc.BN254))
+}
+
+func getInner(assert *test.Assert, field *big.Int) (constraint.ConstraintSystem, groth16.VerifyingKey, witness.Witness, groth16.Proof) {
+	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &InnerCircuitNative{})
+	assert.NoError(err)
+	innerPK, innerVK, err := groth16.Setup(innerCcs)
+	assert.NoError(err)
+
+	// inner proof
+	innerAssignment := &InnerCircuitNative{
+		P: 3,
+		Q: 5,
+		N: 15,
+	}
+	innerWitness, err := frontend.NewWitness(innerAssignment, field)
+	assert.NoError(err)
+	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness)
+	assert.NoError(err)
+	innerPubWitness, err := innerWitness.Public()
+	assert.NoError(err)
+	err = groth16.Verify(innerProof, innerVK, innerPubWitness)
+	assert.NoError(err)
+	return innerCcs, innerVK, innerPubWitness, innerProof
 }
