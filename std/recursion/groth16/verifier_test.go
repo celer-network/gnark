@@ -147,9 +147,7 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	for i := 0; i < 1000; i++ {
-		err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
-	}
+	err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
 	return err
 }
 
