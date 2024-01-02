@@ -460,16 +460,42 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProof(vk VerifyingKey[G1El, G2El,
 	for i := range inS {
 		inS[i] = &witness.Public[i]
 	}
+
 	kSum, err := v.curve.MultiScalarMul(inP, inS)
 	if err != nil {
 		return fmt.Errorf("multi scalar mul: %w", err)
 	}
 	kSum = v.curve.Add(kSum, &vk.G1.K[0])
-	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar}, []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs})
+
+	left := []*G1El{kSum, &proof.Krs, &proof.Ar}
+	right := []*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs}
+	var eee GtEl
+	eee = vk.E
+	for i := 0; i < 500; i++ {
+		eee = *v.pairing.MulGT(&eee, &vk.E)
+		left = append(left, kSum)
+		left = append(left, &proof.Krs)
+		left = append(left, &proof.Ar)
+
+		right = append(right, &vk.G2.GammaNeg)
+		right = append(right, &vk.G2.DeltaNeg)
+		right = append(right, &proof.Bs)
+	}
+
+	pairing, err := v.pairing.Pair(left, right)
 	if err != nil {
 		return fmt.Errorf("pairing: %w", err)
 	}
-	v.pairing.AssertIsEqual(pairing, &vk.E)
+	v.pairing.AssertIsEqual(pairing, &eee)
+
+	/*for i := 0; i < 500; i++ {
+		kSum, err = v.curve.MultiScalarMul(inP, inS)
+		if err != nil {
+			return fmt.Errorf("multi scalar mul: %w", err)
+		}
+		kSum = v.curve.Add(kSum, &vk.G1.K[0])
+	}*/
+
 	return nil
 }
 
@@ -517,6 +543,48 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingK
 		return fmt.Errorf("pairing: %w", err)
 	}
 	v.pairing.AssertIsEqual(pairing, &vk.E)
+	return nil
+}
+
+func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], commitments []G1El, witnesses []Witness[FR]) error {
+	var left []*G1El
+	var right []*G2El
+	var final *GtEl
+	if len(vks) != len(proofs) || len(proofs) != len(commitments) || len(commitments) != len(witnesses) {
+		return fmt.Errorf("invalid input len for batch pairing verification")
+	}
+	for j, vk := range vks {
+		inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
+		for i := range inP {
+			inP[i] = &vk.G1.K[i+1]
+		}
+		fmt.Printf("witness.Public %d inP %d \n", len(witnesses[j].Public), len(inP))
+		inS := make([]*emulated.Element[FR], len(witnesses[j].Public))
+		for i := range inS {
+			inS[i] = &witnesses[j].Public[i]
+		}
+		kSum, err := v.curve.MultiScalarMul(inP, inS)
+		if err != nil {
+			return fmt.Errorf("multi scalar mul: %w", err)
+		}
+		kSum = v.curve.Add(kSum, &vk.G1.K[0])
+		kSum = v.curve.Add(kSum, &commitments[j])
+
+		left = append(left, kSum, &proofs[j].Krs, &proofs[j].Ar)
+		right = append(right, &vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proofs[j].Bs)
+
+		if j == 0 {
+			final = &vk.E
+		} else {
+			final = v.pairing.MulGT(final, &vk.E)
+		}
+	}
+
+	pairing, err := v.pairing.Pair(left, right)
+	if err != nil {
+		return fmt.Errorf("pairing: %w", err)
+	}
+	v.pairing.AssertIsEqual(pairing, final)
 	return nil
 }
 

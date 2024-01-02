@@ -135,6 +135,10 @@ func (pr Pairing) PairingCheck(P []*G1Affine, Q []*G2Affine) error {
 	return nil
 }
 
+func (p *Pairing) MulGT(P *GTEl, Q *GTEl) *GTEl {
+	return p.Mul(P, Q)
+}
+
 func (pr Pairing) AssertIsEqual(x, y *GTEl) {
 	pr.Ext6.AssertIsEqual(x, y)
 }

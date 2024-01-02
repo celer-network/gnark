@@ -284,6 +284,11 @@ func (p *Pairing) PairingCheck(P []*G1Affine, Q []*G2Affine) error {
 	return nil
 }
 
+func (p *Pairing) MulGT(P *GT, Q *GT) *GT {
+	var res GT
+	return res.Mul(p.api, *P, *Q)
+}
+
 // AssertIsEqual asserts the equality of the target group elements.
 func (p *Pairing) AssertIsEqual(e1, e2 *GT) {
 	e1.AssertIsEqual(p.api, *e2)

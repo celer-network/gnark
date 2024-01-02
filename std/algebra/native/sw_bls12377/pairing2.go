@@ -249,6 +249,11 @@ func (p *Pairing) MillerLoop(P []*G1Affine, Q []*G2Affine) (*GT, error) {
 	return &res, err
 }
 
+func (p *Pairing) MulGT(P *GT, Q *GT) *GT {
+	var res GT
+	return res.Mul(p.api, *P, *Q)
+}
+
 // FinalExponentiation performs the final exponentiation on the target group
 // element. It doesn't modify the input.
 func (p *Pairing) FinalExponentiation(e *GT) *GT {
