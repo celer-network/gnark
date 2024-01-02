@@ -77,11 +77,19 @@ func (c *InnerCircuitEmulation) Define(api frontend.API) error {
 type InnerCircuitNative struct {
 	P, Q frontend.Variable
 	N    frontend.Variable `gnark:",public"`
+	N1   frontend.Variable `gnark:",public"`
+	N2   frontend.Variable `gnark:",public"`
+	N3   frontend.Variable `gnark:",public"`
+	N4   frontend.Variable `gnark:",public"`
 }
 
 func (c *InnerCircuitNative) Define(api frontend.API) error {
 	res := api.Mul(c.P, c.Q)
 	api.AssertIsEqual(res, c.N)
+	api.AssertIsEqual(res, c.N1)
+	api.AssertIsEqual(res, c.N2)
+	api.AssertIsEqual(res, c.N3)
+	api.AssertIsEqual(res, c.N4)
 	return nil
 }
 
@@ -147,7 +155,12 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+	for i := 0; i < 1000; i++ {
+		err = verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
+		if err != nil {
+			return err
+		}
+	}
 	return err
 }
 
@@ -497,9 +510,13 @@ func getInner(assert *test.Assert, field *big.Int) (constraint.ConstraintSystem,
 
 	// inner proof
 	innerAssignment := &InnerCircuitNative{
-		P: 3,
-		Q: 5,
-		N: 15,
+		P:  3,
+		Q:  5,
+		N:  15,
+		N1: 15,
+		N2: 15,
+		N3: 15,
+		N4: 15,
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
 	assert.NoError(err)
