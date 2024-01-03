@@ -200,6 +200,8 @@ func TestBatchBLS12InBW6(t *testing.T) {
 	assert := test.NewAssert(t)
 	_, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
 
+	_, innerVK2, innerWitness2, innerProof2 := getInner(assert, ecc.BLS12_377.ScalarField())
+
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
 	assert.NoError(err)
@@ -210,19 +212,30 @@ func TestBatchBLS12InBW6(t *testing.T) {
 	commitment, err := ValueOfProofCommitment[sw_bls12377.G1Affine](innerProof)
 	assert.NoError(err)
 
-	batchSize := 20
+	// outer proof
+	circuitVk2, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK2)
+	assert.NoError(err)
+	circuitWitness2, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness2)
+	assert.NoError(err)
+	circuitProof2, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof2)
+	assert.NoError(err)
+	commitment2, err := ValueOfProofCommitment[sw_bls12377.G1Affine](innerProof2)
+	assert.NoError(err)
 
 	var proofs []Proof[sw_bls12377.G1Affine, sw_bls12377.G2Affine]
 	var witnesses []Witness[sw_bls12377.ScalarField]
 	var vks []VerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]
 	var commitments []sw_bls12377.G1Affine
 
-	for i := 0; i < batchSize; i++ {
-		proofs = append(proofs, circuitProof)
-		witnesses = append(witnesses, circuitWitness)
-		vks = append(vks, circuitVk)
-		commitments = append(commitments, commitment)
-	}
+	proofs = append(proofs, circuitProof)
+	witnesses = append(witnesses, circuitWitness)
+	vks = append(vks, circuitVk)
+	commitments = append(commitments, commitment)
+
+	proofs = append(proofs, circuitProof2)
+	witnesses = append(witnesses, circuitWitness2)
+	vks = append(vks, circuitVk2)
+	commitments = append(commitments, commitment2)
 
 	outerCircuit := &BatchOuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
 		InnerWitness: witnesses,
