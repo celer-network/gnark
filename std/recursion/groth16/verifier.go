@@ -503,7 +503,6 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingK
 	for i := range inP {
 		inP[i] = &vk.G1.K[i+1]
 	}
-	fmt.Printf("witness.Public %d inP %d \n", len(witness.Public), len(inP))
 	inS := make([]*emulated.Element[FR], len(witness.Public))
 	for i := range inS {
 		inS[i] = &witness.Public[i]
@@ -529,12 +528,12 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []Ve
 	if len(vks) != len(proofs) || len(proofs) != len(commitments) || len(commitments) != len(witnesses) {
 		return fmt.Errorf("invalid input len for batch pairing verification")
 	}
-	for j, vk := range vks {
+	for j, _ := range vks {
+		vk := vks[j]
 		inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
 		for i := range inP {
 			inP[i] = &vk.G1.K[i+1]
 		}
-		fmt.Printf("witness.Public %d inP %d \n", len(witnesses[j].Public), len(inP))
 		inS := make([]*emulated.Element[FR], len(witnesses[j].Public))
 		for i := range inS {
 			inS[i] = &witnesses[j].Public[i]

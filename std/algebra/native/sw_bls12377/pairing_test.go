@@ -261,3 +261,65 @@ func doublePairingFixedQData() (P [2]bls12377.G1Affine, Q [2]bls12377.G2Affine, 
 	pairingRes = bls12377.FinalExponentiation(&milRes)
 	return
 }
+
+type tripleBatchPairingBLS377 struct {
+	P1, P2, P3 G1Affine
+	Q1, Q2, Q3 G2Affine
+	Res        GT
+}
+
+func (circuit *tripleBatchPairingBLS377) Define(api frontend.API) error {
+
+	pairingRes, _ := Pair(api, []G1Affine{circuit.P1, circuit.P2, circuit.P3}, []G2Affine{circuit.Q1, circuit.Q2, circuit.Q3})
+
+	pairingRes0, _ := Pair(api, []G1Affine{circuit.P1}, []G2Affine{circuit.Q1})
+	pairingRes1, _ := Pair(api, []G1Affine{circuit.P2}, []G2Affine{circuit.Q2})
+	pairingRes2, _ := Pair(api, []G1Affine{circuit.P3}, []G2Affine{circuit.Q3})
+
+	var finalPairingRes GT
+	finalPairingRes = *finalPairingRes.Mul(api, pairingRes0, pairingRes1)
+	finalPairingRes = *finalPairingRes.Mul(api, finalPairingRes, pairingRes2)
+
+	finalPairingRes.AssertIsEqual(api, circuit.Res)
+
+	finalPairingRes.AssertIsEqual(api, pairingRes)
+
+	pairingRes.AssertIsEqual(api, circuit.Res)
+
+	return nil
+}
+
+func TestTripleBatchPairingBLS377(t *testing.T) {
+	assert := test.NewAssert(t)
+	// pairing test data
+	P, Q, pairingRes := triplePairingData()
+
+	pairingRes2, err := bls12377.Pair(P[:], Q[:])
+	assert.NoError(err)
+	assert.True(pairingRes2.Equal(&pairingRes))
+
+	pairRes0, err := bls12377.Pair(P[0:1], Q[0:1])
+	assert.NoError(err)
+	pairRes1, err := bls12377.Pair(P[1:2], Q[1:2])
+	assert.NoError(err)
+	pairRes2, err := bls12377.Pair(P[2:3], Q[2:3])
+	assert.NoError(err)
+
+	var finalGt bls12377.GT
+	finalGt.Mul(&pairRes0, &pairRes1)
+	finalGt.Mul(&finalGt, &pairRes2)
+
+	assert.True(finalGt.Equal(&pairingRes))
+
+	witness := tripleBatchPairingBLS377{
+		P1:  NewG1Affine(P[0]),
+		P2:  NewG1Affine(P[1]),
+		P3:  NewG1Affine(P[2]),
+		Q1:  NewG2Affine(Q[0]),
+		Q2:  NewG2Affine(Q[1]),
+		Q3:  NewG2Affine(Q[2]),
+		Res: NewGTEl(pairingRes),
+	}
+	assert.CheckCircuit(&tripleBatchPairingBLS377{}, test.WithValidAssignment(&witness), test.WithCurves(ecc.BW6_761), test.NoProverChecks())
+
+}
