@@ -29,6 +29,11 @@ import (
 
 const HasIcicle = true
 
+func SetupDevicePointers(pk *ProvingKey) error {
+	// TODO, add lock here to make sure only init once
+	return pk.setupDevicePointers()
+}
+
 func (pk *ProvingKey) setupDevicePointers() error {
 	if pk.deviceInfo != nil {
 		return nil
