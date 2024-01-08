@@ -144,8 +144,14 @@ func (c *BatchOuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error
 		return fmt.Errorf("get pairing: %w", err)
 	}
 	verifier := NewVerifier(curve, pairing)
-	err = verifier.BatchAssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitments, c.InnerWitness)
-	return err
+	eq, err := verifier.BatchAssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitments, c.InnerWitness)
+	if err != nil {
+		return err
+	}
+	if eq == 0 {
+		return fmt.Errorf("batch not equal")
+	}
+	return nil
 }
 
 func TestBN254InBN254(t *testing.T) {

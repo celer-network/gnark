@@ -126,7 +126,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1Device.Z = <-copyZDone
 
 	/*************************  Start G2 Device Setup  ***************************/
-	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 2
 	copyG2BDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone

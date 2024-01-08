@@ -521,12 +521,12 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingK
 	return nil
 }
 
-func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], commitments []G1El, witnesses []Witness[FR]) error {
+func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], commitments []G1El, witnesses []Witness[FR]) (frontend.Variable, error) {
 	var left []*G1El
 	var right []*G2El
 	var final *GtEl
 	if len(vks) != len(proofs) || len(proofs) != len(commitments) || len(commitments) != len(witnesses) {
-		return fmt.Errorf("invalid input len for batch pairing verification")
+		return 0, fmt.Errorf("invalid input len for batch pairing verification")
 	}
 	for j, _ := range vks {
 		vk := vks[j]
@@ -540,7 +540,7 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []Ve
 		}
 		kSum, err := v.curve.MultiScalarMul(inP, inS)
 		if err != nil {
-			return fmt.Errorf("multi scalar mul: %w", err)
+			return 0, fmt.Errorf("multi scalar mul: %w", err)
 		}
 		kSum = v.curve.Add(kSum, &vk.G1.K[0])
 		kSum = v.curve.Add(kSum, &commitments[j])
@@ -557,10 +557,10 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []Ve
 
 	pairing, err := v.pairing.Pair(left, right)
 	if err != nil {
-		return fmt.Errorf("pairing: %w", err)
+		return 0, fmt.Errorf("pairing: %w", err)
 	}
 	v.pairing.AssertIsEqual(pairing, final)
-	return nil
+	return v.pairing.IsEqual(pairing, final), nil
 }
 
 // return 1 is pass, return 0 is fail
