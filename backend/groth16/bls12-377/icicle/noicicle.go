@@ -18,5 +18,5 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 }
 
 func SetupDevicePointers(pk *ProvingKey) error {
-	return nil, fmt.Errorf("icicle backend requested but program compiled without 'icicle' build tag")
+	return fmt.Errorf("icicle backend requested but program compiled without 'icicle' build tag")
 }
