@@ -314,7 +314,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
 
 	var h unsafe.Pointer
-	h = computeH(solution.A, solution.B, solution.C, pk)
+	h = computeH(solution.A, solution.B, solution.C, pk, log)
 	solution.A = nil
 	solution.B = nil
 	solution.C = nil
