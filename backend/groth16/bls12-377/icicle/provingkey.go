@@ -15,9 +15,9 @@ type deviceInfo struct {
 		Twiddles, TwiddlesInv     unsafe.Pointer
 		CosetTable, CosetTableInv unsafe.Pointer
 	}
-	/*G2Device struct {
+	G2Device struct {
 		B unsafe.Pointer
-	}*/
+	}
 	DenDevice             unsafe.Pointer
 	InfinityPointIndicesK []int
 }

@@ -4,10 +4,8 @@ package icicle_bls12377
 
 import (
 	"fmt"
-	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
 	"math/bits"
-	"runtime"
 	"time"
 	"unsafe"
 
@@ -128,10 +126,10 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1Device.Z = <-copyZDone
 
 	/*************************  Start G2 Device Setup  ***************************/
-	/*pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	copyG2BDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	pk.G2Device.B = <-copyG2BDone*/
+	pk.G2Device.B = <-copyG2BDone
 
 	/*************************  End G2 Device Setup  ***************************/
 	return nil
@@ -262,8 +260,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValuesA)
 	}()
 
-	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 	go func() {
+		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -388,28 +386,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
-		nbTasks := runtime.NumCPU()
-		if nbTasks <= 16 {
-			// if we don't have a lot of CPUs, this may artificially split the MSM
-			nbTasks *= 2
-		}
-		<-chWireValuesB
-		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-			return err
-		}
-
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
-
-		proof.Bs.FromJacobian(&Bs)
-		return nil
-	}
-	/*computeBS2 := func() error {
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
-
 		<-chWireValuesB
 		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
 			return err
@@ -422,7 +398,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		proof.Bs.FromJacobian(&Bs)
 		return nil
-	}*/
+	}
 
 	// wait for FFT to end
 	<-chHDone
