@@ -4,6 +4,7 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/rs/zerolog"
 	"math/big"
 	"math/bits"
 	"unsafe"
@@ -249,6 +250,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	iciclegnark.CopyToDevice(wireValuesA, wireValuesASize*fr.Bytes, copyWireADone)
 	wireValuesADevicePtr := <-copyWireADone
 
+	log.Debug().Msg(fmt.Sprintf("wireValuesA malloc bytes: %d", wireValuesASize*fr.Bytes))
+
 	wireValuesADevice = iciclegnark.OnDeviceData{
 		P:    wireValuesADevicePtr,
 		Size: wireValuesASize,
@@ -280,6 +283,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	copyWireBDone := make(chan unsafe.Pointer, 1)
 	iciclegnark.CopyToDevice(wireValuesB, wireValuesBSize*fr.Bytes, copyWireBDone)
 	wireValuesBDevicePtr := <-copyWireBDone
+	log.Debug().Msg(fmt.Sprintf("wireValuesB malloc bytes: %d", wireValuesBSize*fr.Bytes))
 
 	var wireValuesBDevice iciclegnark.OnDeviceData
 	wireValuesBDevice = iciclegnark.OnDeviceData{
@@ -344,6 +348,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	iciclegnark.CopyToDevice(scalars, len(scalars)*fr.Bytes, copyScalarsDDone)
 	scalars_d := <-copyScalarsDDone
 
+	log.Debug().Msg(fmt.Sprintf("scalars_d malloc bytes: %d", len(scalars)*fr.Bytes))
+
 	krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
 	iciclegnark.FreeDevicePointer(scalars_d)
 
@@ -391,7 +397,7 @@ func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr
 	return
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) unsafe.Pointer {
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
@@ -402,6 +408,8 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	n = len(a)
 
 	sizeBytes := n * fr.Bytes
+
+	log.Debug().Msg(fmt.Sprintf("h size a b c bytes: %d %d", sizeBytes, sizeBytes*3))
 
 	/*********** Copy a,b,c to Device Start ************/
 	// Individual channels are necessary to know which device pointers
@@ -437,11 +445,9 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	h := iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
 
-	go func() {
-		iciclegnark.FreeDevicePointer(a_device)
-		iciclegnark.FreeDevicePointer(b_device)
-		iciclegnark.FreeDevicePointer(c_device)
-	}()
+	iciclegnark.FreeDevicePointer(a_device)
+	iciclegnark.FreeDevicePointer(b_device)
+	iciclegnark.FreeDevicePointer(c_device)
 
 	iciclegnark.ReverseScalars(h, n)
 	return h
