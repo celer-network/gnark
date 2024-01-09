@@ -219,6 +219,23 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
+	// sample random r and s
+	var r, s big.Int
+	var _r, _s, _kr fr.Element
+	if _, err := _r.SetRandom(); err != nil {
+		return nil, err
+	}
+	if _, err := _s.SetRandom(); err != nil {
+		return nil, err
+	}
+	_kr.Mul(&_r, &_s).Neg(&_kr)
+
+	_r.BigInt(&r)
+	_s.BigInt(&s)
+
+	// computes r[δ], s[δ], kr[δ]
+	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
@@ -284,23 +301,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		close(chWireValuesB)
 	}()
-
-	// sample random r and s
-	var r, s big.Int
-	var _r, _s, _kr fr.Element
-	if _, err := _r.SetRandom(); err != nil {
-		return nil, err
-	}
-	if _, err := _s.SetRandom(); err != nil {
-		return nil, err
-	}
-	_kr.Mul(&_r, &_s).Neg(&_kr)
-
-	_r.BigInt(&r)
-	_s.BigInt(&s)
-
-	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
 	var bs1, ar curve.G1Jac
 
