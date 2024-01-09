@@ -427,19 +427,15 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) unsafe.P
 	c_device := <-copyCDone
 	/*********** Copy a,b,c to Device End ************/
 
-	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
 		a_intt_d := iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
 
 		iciclegnark.NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-
-		computeInttNttDone <- nil
 		iciclegnark.FreeDevicePointer(a_intt_d)
 	}
 	computeInttNttOnDevice(a_device)
 	computeInttNttOnDevice(b_device)
 	computeInttNttOnDevice(c_device)
-	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
