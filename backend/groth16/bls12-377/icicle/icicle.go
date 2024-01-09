@@ -243,17 +243,27 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		j++
 	}
 	wireValuesASize := len(wireValuesA)
-	scalarBytes := wireValuesASize * fr.Bytes
 
 	// Copy scalars to the device and retain ptr to them
 	copyWireADone := make(chan unsafe.Pointer, 1)
-	iciclegnark.CopyToDevice(wireValuesA, scalarBytes, copyWireADone)
+	iciclegnark.CopyToDevice(wireValuesA, wireValuesASize*fr.Bytes, copyWireADone)
 	wireValuesADevicePtr := <-copyWireADone
 
 	wireValuesADevice = iciclegnark.OnDeviceData{
 		P:    wireValuesADevicePtr,
 		Size: wireValuesASize,
 	}
+
+	var ar curve.G1Jac
+
+	if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
+		return nil, err
+	}
+
+	ar.AddMixed(&pk.G1.Alpha)
+	ar.AddMixed(&deltas[0])
+	proof.Ar.FromJacobian(&ar)
+
 	iciclegnark.FreeDevicePointer(wireValuesADevice.P)
 
 	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
@@ -265,11 +275,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		j++
 	}
 	wireValuesBSize := len(wireValuesB)
-	scalarBytes = wireValuesBSize * fr.Bytes
 
 	// Copy scalars to the device and retain ptr to them
 	copyWireBDone := make(chan unsafe.Pointer, 1)
-	iciclegnark.CopyToDevice(wireValuesB, scalarBytes, copyWireBDone)
+	iciclegnark.CopyToDevice(wireValuesB, wireValuesBSize*fr.Bytes, copyWireBDone)
 	wireValuesBDevicePtr := <-copyWireBDone
 
 	var wireValuesBDevice iciclegnark.OnDeviceData
@@ -278,7 +287,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		Size: wireValuesBSize,
 	}
 
-	var bs1, ar curve.G1Jac
+	var bs1 curve.G1Jac
 	if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
 		return nil, err
 	}
@@ -331,10 +340,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
 	}
 
-	scalarBytes = len(scalars) * fr.Bytes
-
 	copyScalarsDDone := make(chan unsafe.Pointer, 1)
-	iciclegnark.CopyToDevice(scalars, scalarBytes, copyScalarsDDone)
+	iciclegnark.CopyToDevice(scalars, len(scalars)*fr.Bytes, copyScalarsDDone)
 	scalars_d := <-copyScalarsDDone
 
 	krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
