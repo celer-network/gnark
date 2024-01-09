@@ -37,6 +37,7 @@ func SetupDevicePointers(pk *ProvingKey) error {
 }
 
 func (pk *ProvingKey) setupDevicePointers() error {
+	log := logger.Logger()
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -50,9 +51,11 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	copyDenDone := make(chan unsafe.Pointer, 1)
 	/*************************     CosetTableInv      ***************************/
 	go iciclegnark.CopyToDevice(pk.Domain.CosetTableInv, sizeBytes, copyCosetInvDone)
+	log.Debug().Msg(fmt.Sprintf("pk.Domain.CosetTableInv bytes: %d", sizeBytes))
 
 	/*************************     CosetTable      ***************************/
 	go iciclegnark.CopyToDevice(pk.Domain.CosetTable, sizeBytes, copyCosetDone)
+	log.Debug().Msg(fmt.Sprintf("pk.Domain.CosetTable bytes: %d", sizeBytes))
 
 	/*************************     Den      ***************************/
 	var denI, oneI fr.Element
@@ -71,6 +74,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	}
 
 	go iciclegnark.CopyToDevice(denIcicleArr, sizeBytes, copyDenDone)
+	log.Debug().Msg(fmt.Sprintf("denIcicleArr bytes: %d", sizeBytes))
 
 	/*************************     Twiddles and Twiddles Inv    ***************************/
 	twiddlesInv_d_gen, twddles_err := iciclegnark.GenerateTwiddleFactors(n, true)
@@ -96,11 +100,13 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
 	copyADone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.A, pointsBytesA, copyADone) // Make a function for points
+	log.Debug().Msg(fmt.Sprintf("pk.G1.A bytes: %d", pointsBytesA))
 
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
 	copyBDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.B, pointsBytesB, copyBDone) // Make a function for points
+	log.Debug().Msg(fmt.Sprintf("pk.G1.B bytes: %d", pointsBytesB))
 
 	/*************************     K      ***************************/
 	var pointsNoInfinity []curve.G1Affine
@@ -115,11 +121,13 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
 	copyKDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyPointsToDevice(pointsNoInfinity, pointsBytesK, copyKDone) // Make a function for points
+	log.Debug().Msg(fmt.Sprintf("pointsNoInfinity bytes: %d", pointsBytesK))
 
 	/*************************     Z      ***************************/
 	pointsBytesZ := len(pk.G1.Z) * fp.Bytes * 2
 	copyZDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.Z, pointsBytesZ, copyZDone) // Make a function for points
+	log.Debug().Msg(fmt.Sprintf("pk.G1.Z bytes: %d", pointsBytesZ))
 
 	/*************************  End G1 Device Setup  ***************************/
 	pk.G1Device.A = <-copyADone
@@ -132,6 +140,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	copyG2BDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone*/
+	log.Debug().Msg(fmt.Sprintf("pk.G2.B bytes: %d", len(pk.G2.B)*fp.Bytes*4))
 
 	/*************************  End G2 Device Setup  ***************************/
 	return nil
