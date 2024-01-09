@@ -436,9 +436,9 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) unsafe.P
 		computeInttNttDone <- nil
 		iciclegnark.FreeDevicePointer(a_intt_d)
 	}
-	go computeInttNttOnDevice(a_device)
-	go computeInttNttOnDevice(b_device)
-	go computeInttNttOnDevice(c_device)
+	computeInttNttOnDevice(a_device)
+	computeInttNttOnDevice(b_device)
+	computeInttNttOnDevice(c_device)
 	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
