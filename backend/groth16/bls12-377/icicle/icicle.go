@@ -131,6 +131,12 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone
 
+	pk.G1Device.A = nil
+	pk.G1Device.B = nil
+	pk.G1Device.K = nil
+	pk.G1Device.Z = nil
+	pk.G2Device.B = nil
+
 	/*************************  End G2 Device Setup  ***************************/
 	return nil
 }
