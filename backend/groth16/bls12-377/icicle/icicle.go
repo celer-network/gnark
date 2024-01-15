@@ -4,6 +4,7 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"math/big"
 	"math/bits"
 	"time"
@@ -132,6 +133,14 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G2Device.B = <-copyG2BDone
 
 	/*************************  End G2 Device Setup  ***************************/
+
+	/*free pk data*/
+	pk.G1.A = nil
+	pk.G1.B = nil
+	pk.G1.Z = make([]curve.G1Affine, 1)
+	pk.G1.K = nil
+	pk.Domain = fft.Domain{Cardinality: pk.Domain.Cardinality}
+
 	return nil
 }
 
