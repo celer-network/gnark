@@ -7,6 +7,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"math/big"
 	"math/bits"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -30,12 +31,19 @@ import (
 
 const HasIcicle = true
 
+var (
+	setupDeviceLock sync.Mutex
+	gpuResourceLock sync.Mutex
+)
+
 func SetupDevicePointers(pk *ProvingKey) error {
 	// TODO, add lock here to make sure only init once
 	return pk.setupDevicePointers()
 }
 
 func (pk *ProvingKey) setupDevicePointers() error {
+	setupDeviceLock.Lock()
+	defer setupDeviceLock.Unlock()
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -256,6 +264,27 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
+	// TODO parall?
+	// sample random r and s
+	var r, s big.Int
+	var _r, _s, _kr fr.Element
+	if _, err := _r.SetRandom(); err != nil {
+		return nil, err
+	}
+	if _, err := _s.SetRandom(); err != nil {
+		return nil, err
+	}
+	_kr.Mul(&_r, &_s).Neg(&_kr)
+
+	_r.BigInt(&r)
+	_s.BigInt(&s)
+
+	// computes r[δ], s[δ], kr[δ]
+	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+
+	gpuResourceLock.Lock()
+	defer gpuResourceLock.Unlock()
+
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
@@ -320,23 +349,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		close(chWireValuesB)
 	}()
-
-	// sample random r and s
-	var r, s big.Int
-	var _r, _s, _kr fr.Element
-	if _, err := _r.SetRandom(); err != nil {
-		return nil, err
-	}
-	if _, err := _s.SetRandom(); err != nil {
-		return nil, err
-	}
-	_kr.Mul(&_r, &_s).Neg(&_kr)
-
-	_r.BigInt(&r)
-	_s.BigInt(&s)
-
-	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
 	var bs1, ar curve.G1Jac
 
