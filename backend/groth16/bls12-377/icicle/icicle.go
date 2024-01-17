@@ -219,13 +219,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			solver.OverrideHint(r1cs.GkrInfo.ProveHintID, cs.GkrProveHint(r1cs.GkrInfo.HashName, &gkrData)))
 	}
 
-	solveLock.Lock()
+	//solveLock.Lock()
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
 	if err != nil {
-		solveLock.Unlock()
+		//solveLock.Unlock()
 		return nil, err
 	}
-	solveLock.Unlock()
+	//solveLock.Unlock()
 
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
