@@ -12,7 +12,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
-	github.com/ingonyama-zk/iciclegnark v0.1.1
+	github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240120100015-8653136f9db4
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.30.0
 	github.com/stretchr/testify v1.8.4
@@ -25,7 +25,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
-	github.com/ingonyama-zk/icicle v0.1.0 // indirect
+	github.com/ingonyama-zk/icicle v0.1.1-0.20240120093837-db9eff751859 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect

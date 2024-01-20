@@ -4,16 +4,17 @@ package icicle_bls12377
 
 import (
 	"fmt"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"math/big"
 	"math/bits"
 	"sync"
 	"time"
 	"unsafe"
 
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
+
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp/hash_to_field"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
@@ -376,10 +377,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		for _, indexToRemove := range pk.InfinityPointIndicesK {
-			scalars = append(scalars[:indexToRemove], scalars[indexToRemove+1:]...)
-		}
-
+		scalars = filterHeap(scalars, 0, pk.InfinityPointIndicesK)
 		scalarBytes := len(scalars) * fr.Bytes
 
 		copyDone := make(chan unsafe.Pointer, 1)
@@ -510,12 +508,11 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
-		a_intt_d := iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
 
-		iciclegnark.NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		iciclegnark.NttOnDevice(devicePointer, devicePointer, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
 
 		computeInttNttDone <- nil
-		iciclegnark.FreeDevicePointer(a_intt_d)
 	}
 	go computeInttNttOnDevice(a_device)
 	go computeInttNttOnDevice(b_device)
@@ -524,14 +521,13 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
-	h := iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
 
 	go func() {
-		iciclegnark.FreeDevicePointer(a_device)
 		iciclegnark.FreeDevicePointer(b_device)
 		iciclegnark.FreeDevicePointer(c_device)
 	}()
 
-	iciclegnark.ReverseScalars(h, n)
-	return h
+	iciclegnark.ReverseScalars(a_device, n)
+	return a_device
 }
