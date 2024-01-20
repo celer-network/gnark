@@ -29,8 +29,11 @@ github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lTo
 github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6/go.mod h1:xQig96I1VNBDIWGCdTt54nHt6EeI639SmHycLYL7FkA=
 github.com/ingonyama-zk/icicle v0.1.0 h1:9zbHaYv8/4g3HWRabBCpeH+64U8GJ99K1qeqE2jO6LM=
 github.com/ingonyama-zk/icicle v0.1.0/go.mod h1:kAK8/EoN7fUEmakzgZIYdWy1a2rBnpCaZLqSHwZWxEk=
+github.com/ingonyama-zk/icicle v0.1.1-0.20240120093837-db9eff751859/go.mod h1:kAK8/EoN7fUEmakzgZIYdWy1a2rBnpCaZLqSHwZWxEk=
 github.com/ingonyama-zk/iciclegnark v0.1.1 h1:BugVGAkKFu2uy02cRsgQdsE18VaFIJz55dBeZQJl4R0=
 github.com/ingonyama-zk/iciclegnark v0.1.1/go.mod h1:g17CDuMfNBiN4hhZ4aA0rGF24Abv5GBFHJqE7aLxaZQ=
+github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240120100015-8653136f9db4 h1:G6rREPYobR/WTuXcypQAedckBhdh6XlDtDs3rZC/K5I=
+github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240120100015-8653136f9db4/go.mod h1:L4ipdq3/9xeOW3t6RGEpy5n1h88jJsvtuTopHd9x4dQ=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/leanovate/gopter v0.2.9 h1:fQjYxZaynp97ozCzfOyOuAGOU4aU/z37zf/tOujFk7c=

@@ -505,12 +505,6 @@ func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr
 }
 
 func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
-	// H part of Krs
-	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
-	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
-	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
-	// 	3 - h = ifft_coset(ca o cb - cc)
-
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
@@ -540,12 +534,12 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
-		a_intt_d := iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
-		iciclegnark.NttOnDevice(devicePointer, a_intt_d, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-		computeInttNttDone <- nil
-		iciclegnark.FreeDevicePointer(a_intt_d)
-	}
+		iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
 
+		iciclegnark.NttOnDevice(devicePointer, devicePointer, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+
+		computeInttNttDone <- nil
+	}
 	go computeInttNttOnDevice(a_device)
 	go computeInttNttOnDevice(b_device)
 	go computeInttNttOnDevice(c_device)
@@ -553,15 +547,13 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
 
-	h := iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
 
 	go func() {
-		iciclegnark.FreeDevicePointer(a_device)
 		iciclegnark.FreeDevicePointer(b_device)
 		iciclegnark.FreeDevicePointer(c_device)
 	}()
 
-	iciclegnark.ReverseScalars(h, n)
-
-	return h
+	iciclegnark.ReverseScalars(a_device, n)
+	return a_device
 }
