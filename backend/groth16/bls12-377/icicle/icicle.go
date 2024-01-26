@@ -4,8 +4,10 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -103,9 +105,9 @@ func (pk *ProvingKey) setupDevicePointers() error {
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
-	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
-	copyADone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.A, pointsBytesA, copyADone) // Make a function for points
+	//pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
+	//copyADone := make(chan unsafe.Pointer, 1)
+	//go iciclegnark.CopyPointsToDevice(pk.G1.A, pointsBytesA, copyADone) // Make a function for points
 
 	/*************************     B      ***************************/
 	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
@@ -132,7 +134,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	go iciclegnark.CopyPointsToDevice(pk.G1.Z, pointsBytesZ, copyZDone) // Make a function for points
 
 	/*************************  End G1 Device Setup  ***************************/
-	pk.G1Device.A = <-copyADone
+	//pk.G1Device.A = <-copyADone
 	pk.G1Device.B = <-copyBDone
 	pk.G1Device.K = <-copyKDone
 	pk.G1Device.Z = <-copyZDone
@@ -146,7 +148,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	/*************************  End G2 Device Setup  ***************************/
 
 	/*free pk data*/
-	pk.G1.A = nil
+	//pk.G1.A = nil
 	pk.G1.B = nil
 	pk.G1.Z = make([]curve.G1Affine, 1)
 	pk.G1.K = nil
@@ -279,8 +281,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var wireValuesADevice, wireValuesBDevice iciclegnark.OnDeviceData
 	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
+	var wireValuesA []fr.Element
 	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -347,14 +350,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeAR1 := func() error {
 		<-chWireValuesA
 
-		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
-			return err
+		if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2}); err != nil {
+			return merr
 		}
-
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-
 		return nil
 	}
 

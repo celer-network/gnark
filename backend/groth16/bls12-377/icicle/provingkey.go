@@ -9,7 +9,7 @@ import (
 
 type deviceInfo struct {
 	G1Device struct {
-		A, B, K, Z unsafe.Pointer
+		/*A,*/ B, K, Z unsafe.Pointer
 	}
 	DomainDevice struct {
 		Twiddles, TwiddlesInv     unsafe.Pointer
