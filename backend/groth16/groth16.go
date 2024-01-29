@@ -46,7 +46,6 @@ import (
 	gnarkio "github.com/consensys/gnark/io"
 
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
-	icicle_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
 	groth16_bls12381 "github.com/consensys/gnark/backend/groth16/bls12-381"
 	groth16_bls24315 "github.com/consensys/gnark/backend/groth16/bls24-315"
 	groth16_bls24317 "github.com/consensys/gnark/backend/groth16/bls24-317"
@@ -177,8 +176,8 @@ func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.
 	}
 	switch _r1cs := r1cs.(type) {
 	case *cs_bls12377.R1CS:
-		if icicle_bls12377.HasIcicle && opt.Accelerator == "icicle" {
-			return icicle_bls12377.Prove(_r1cs, pk.(*groth16_bls12377.ProvingKey), fullWitness, opts...)
+		if groth16_bls12377.HasIcicle && opt.Accelerator == "icicle" {
+			return groth16_bls12377.ProveDevice(_r1cs, pk.(*groth16_bls12377.ProvingKey), fullWitness, opts...)
 		}
 		return groth16_bls12377.Prove(_r1cs, pk.(*groth16_bls12377.ProvingKey), fullWitness, opts...)
 
@@ -228,8 +227,8 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 		if err := groth16_bls12377.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
 		}
-		if icicle_bls12377.HasIcicle {
-			err := icicle_bls12377.SetupDevicePointers(&pk)
+		if groth16_bls12377.HasIcicle {
+			err := groth16_bls12377.SetupDevicePointers(&pk)
 			if err != nil {
 				return nil, nil, err
 			}

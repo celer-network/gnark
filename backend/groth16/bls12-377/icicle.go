@@ -1,6 +1,6 @@
 //go:build icicle
 
-package icicle_bls12377
+package groth16
 
 import (
 	"fmt"
@@ -10,22 +10,20 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
-
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
-	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
+	"github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
 	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
 	"github.com/consensys/gnark/constraint/solver"
 	fcs "github.com/consensys/gnark/frontend/cs"
-	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
 )
@@ -39,13 +37,13 @@ var (
 	solveLock sync.Mutex
 )
 
-func SetupDevicePointers(pk *groth16_bls12377.ProvingKey) error {
+func SetupDevicePointers(pk *ProvingKey) error {
 	setupDeviceLock.Lock()
 	defer setupDeviceLock.Unlock()
 	if pk.DeviceInfo != nil {
 		return nil
 	}
-	pk.DeviceInfo = &DeviceInfo{}
+	pk.DeviceInfo = &icicle_bls12377.DeviceInfo{}
 	n := int(pk.Domain.Cardinality)
 	sizeBytes := n * fr.Bytes
 
@@ -150,7 +148,7 @@ func SetupDevicePointers(pk *groth16_bls12377.ProvingKey) error {
 	return nil
 }
 
-func Prove(r1cs *cs.R1CS, pk *groth16_bls12377.ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
+func ProveDevice(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -166,10 +164,11 @@ func Prove(r1cs *cs.R1CS, pk *groth16_bls12377.ProvingKey, fullWitness witness.W
 			return nil, fmt.Errorf("setup device pointers: %w", err)
 		}
 	}
+	log.Debug().Msg("prove 377 on device")
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
 
-	proof := &groth16_bls12377.Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
+	proof := &Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
 
 	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
 
@@ -259,7 +258,7 @@ func Prove(r1cs *cs.R1CS, pk *groth16_bls12377.ProvingKey, fullWitness witness.W
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
 	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
+		h = computeDeviceH(solution.A, solution.B, solution.C, pk)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -445,32 +444,7 @@ func Prove(r1cs *cs.R1CS, pk *groth16_bls12377.ProvingKey, fullWitness witness.W
 	return proof, nil
 }
 
-func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr.Element) {
-
-	if len(toRemove) == 0 {
-		return slice
-	}
-
-	heap := utils.IntHeap(toRemove)
-	heap.Heapify()
-
-	r = make([]fr.Element, 0, len(slice))
-
-	// note: we can optimize that for the likely case where len(slice) >>> len(toRemove)
-	for i := 0; i < len(slice); i++ {
-		if len(heap) > 0 && i+sliceFirstIndex == heap[0] {
-			for len(heap) > 0 && i+sliceFirstIndex == heap[0] {
-				heap.Pop()
-			}
-			continue
-		}
-		r = append(r, slice[i])
-	}
-
-	return
-}
-
-func computeH(a, b, c []fr.Element, pk *groth16_bls12377.ProvingKey) unsafe.Pointer {
+func computeDeviceH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
