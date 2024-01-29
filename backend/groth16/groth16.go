@@ -219,16 +219,12 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 	switch _r1cs := r1cs.(type) {
 	case *cs_bls12377.R1CS:
 		var vk groth16_bls12377.VerifyingKey
-		if icicle_bls12377.HasIcicle {
-			var pk icicle_bls12377.ProvingKey
-			if err := icicle_bls12377.Setup(_r1cs, &pk, &vk); err != nil {
-				return nil, nil, err
-			}
-			return &pk, &vk, nil
-		}
 		var pk groth16_bls12377.ProvingKey
 		if err := groth16_bls12377.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
+		}
+		if icicle_bls12377.HasIcicle {
+			return &icicle_bls12377.ProvingKey{ProvingKey: &pk}, &vk, nil
 		}
 		return &pk, &vk, nil
 	case *cs_bls12381.R1CS:
@@ -240,30 +236,22 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 		return &pk, &vk, nil
 	case *cs_bn254.R1CS:
 		var vk groth16_bn254.VerifyingKey
-		if icicle_bn254.HasIcicle {
-			var pk icicle_bn254.ProvingKey
-			if err := icicle_bn254.Setup(_r1cs, &pk, &vk); err != nil {
-				return nil, nil, err
-			}
-			return &pk, &vk, nil
-		}
 		var pk groth16_bn254.ProvingKey
 		if err := groth16_bn254.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
 		}
+		if icicle_bn254.HasIcicle {
+			return &icicle_bn254.ProvingKey{ProvingKey: &pk}, &vk, nil
+		}
 		return &pk, &vk, nil
 	case *cs_bw6761.R1CS:
 		var vk groth16_bw6761.VerifyingKey
-		if icicle_bw6761.HasIcicle {
-			var pk icicle_bw6761.ProvingKey
-			if err := icicle_bw6761.Setup(_r1cs, &pk, &vk); err != nil {
-				return nil, nil, err
-			}
-			return &pk, &vk, nil
-		}
 		var pk groth16_bw6761.ProvingKey
 		if err := groth16_bw6761.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
+		}
+		if icicle_bw6761.HasIcicle {
+			return &icicle_bw6761.ProvingKey{ProvingKey: &pk}, &vk, nil
 		}
 		return &pk, &vk, nil
 	case *cs_bls24317.R1CS:
