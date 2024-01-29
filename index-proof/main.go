@@ -2,30 +2,99 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"runtime/debug"
-
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
+	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
+	icicle_bn254 "github.com/consensys/gnark/backend/groth16/bn254/icicle"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/index-proof/core"
 	"github.com/consensys/gnark/index-proof/utils"
 	"github.com/ethereum/go-ethereum/rlp"
+	"log"
+	"os"
+	"reflect"
+	"runtime/debug"
 )
 
 func main() {
+	//SimpleTest()
+	PkTest()
+}
+
+func PkTest() {
+	var vk = groth16.NewVerifyingKey(ecc.BN254)
+	err := ReadVerifyingKey("test_index_proof_circuit.vk", vk)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var pk_cpu = &groth16_bn254.ProvingKey{}
+	var pk_gpu = &icicle_bn254.ProvingKey{}
+	err = ReadProvingKey("test_index_proof_circuit.pk", pk_cpu)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	err = ReadProvingKey("test_index_proof_circuit.pk", pk_gpu)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var indexBuf []byte
+
+	indexBuf = rlp.AppendUint64(indexBuf, uint64(1))
+	input := utils.GetHexArray(fmt.Sprintf("%x", indexBuf), 6)
+	if len(input) != 6 {
+		log.Fatalf("invalid input, index: %d", 1)
+	}
+	var witnessInput [6]frontend.Variable
+	for x, y := range input {
+		witnessInput[x] = y
+	}
+
+	assignment := core.IndexCheckCircuit{
+		Index:     1,
+		RlpString: witnessInput,
+	}
+
+	witness, _ := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
+	publicWitness, _ := witness.Public()
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
+	if err != nil {
+		log.Fatal("frontend.Compile")
+	}
+
+	fmt.Println("xxxxx")
+	fmt.Println(reflect.DeepEqual(pk_gpu.ProvingKey, pk_cpu))
+	// groth16: Prove & Verify
+	for i := 0; i < 1; i++ {
+		proof, err := groth16.Prove(ccs, &pk_gpu.ProvingKey, witness, backend.WithIcicleAcceleration())
+
+		if err != nil {
+			debug.PrintStack()
+			log.Fatal("prove computation failed...", err)
+		}
+
+		err = groth16.Verify(proof, vk, publicWitness)
+		if err != nil {
+			log.Fatal("groth16 verify failed...")
+		}
+	}
+}
+
+func SimpleTest() {
 	// generate CompiledConstraintSystem
-	ccs, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &core.IndexCheckCircuit{})
 	if err != nil {
 		log.Fatal("frontend.Compile")
 	}
 
 	// groth16 zkSNARK: Setup
-	var pk = groth16.NewProvingKey(ecc.BW6_761)
-	var vk = groth16.NewVerifyingKey(ecc.BW6_761)
+	var pk = groth16.NewProvingKey(ecc.BN254)
+	var vk = groth16.NewVerifyingKey(ecc.BN254)
 
 	log.Println("pk load done start.")
 	/*pk, vk, err = groth16.Setup(ccs)
@@ -68,11 +137,11 @@ func main() {
 		RlpString: witnessInput,
 	}
 
-	witness, _ := frontend.NewWitness(&assignment, ecc.BW6_761.ScalarField())
+	witness, _ := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
 	publicWitness, _ := witness.Public()
 
 	// groth16: Prove & Verify
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		proof, err := groth16.Prove(ccs, pk, witness, backend.WithIcicleAcceleration())
 
 		if err != nil {
