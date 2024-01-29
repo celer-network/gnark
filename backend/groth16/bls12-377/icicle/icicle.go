@@ -32,11 +32,6 @@ import (
 
 const HasIcicle = true
 
-func SetupDevicePointers(pk *ProvingKey) error {
-	// TODO, add lock here to make sure only init once
-	return pk.setupDevicePointers()
-}
-
 var (
 	setupDeviceLock sync.Mutex
 	gpuResourceLock sync.Mutex
@@ -44,13 +39,13 @@ var (
 	solveLock sync.Mutex
 )
 
-func (pk *ProvingKey) setupDevicePointers() error {
+func SetupDevicePointers(pk *groth16_bls12377.ProvingKey) error {
 	setupDeviceLock.Lock()
 	defer setupDeviceLock.Unlock()
-	if pk.deviceInfo != nil {
+	if pk.DeviceInfo != nil {
 		return nil
 	}
-	pk.deviceInfo = &deviceInfo{}
+	pk.DeviceInfo = &DeviceInfo{}
 	n := int(pk.Domain.Cardinality)
 	sizeBytes := n * fr.Bytes
 
@@ -94,12 +89,12 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	}
 
 	/*************************  End Domain Device Setup  ***************************/
-	pk.DomainDevice.Twiddles = twiddles_d_gen
-	pk.DomainDevice.TwiddlesInv = twiddlesInv_d_gen
+	pk.DeviceInfo.DomainDevice.Twiddles = twiddles_d_gen
+	pk.DeviceInfo.DomainDevice.TwiddlesInv = twiddlesInv_d_gen
 
-	pk.DomainDevice.CosetTableInv = <-copyCosetInvDone
-	pk.DomainDevice.CosetTable = <-copyCosetDone
-	pk.DenDevice = <-copyDenDone
+	pk.DeviceInfo.DomainDevice.CosetTableInv = <-copyCosetInvDone
+	pk.DeviceInfo.DomainDevice.CosetTable = <-copyCosetDone
+	pk.DeviceInfo.DenDevice = <-copyDenDone
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
@@ -116,7 +111,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	var pointsNoInfinity []curve.G1Affine
 	for i, gnarkPoint := range pk.G1.K {
 		if gnarkPoint.IsInfinity() {
-			pk.InfinityPointIndicesK = append(pk.InfinityPointIndicesK, i)
+			pk.DeviceInfo.InfinityPointIndicesK = append(pk.DeviceInfo.InfinityPointIndicesK, i)
 		} else {
 			pointsNoInfinity = append(pointsNoInfinity, gnarkPoint)
 		}
@@ -132,16 +127,16 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	go iciclegnark.CopyPointsToDevice(pk.G1.Z, pointsBytesZ, copyZDone) // Make a function for points
 
 	/*************************  End G1 Device Setup  ***************************/
-	pk.G1Device.A = <-copyADone
-	pk.G1Device.B = <-copyBDone
-	pk.G1Device.K = <-copyKDone
-	pk.G1Device.Z = <-copyZDone
+	pk.DeviceInfo.G1Device.A = <-copyADone
+	pk.DeviceInfo.G1Device.B = <-copyBDone
+	pk.DeviceInfo.G1Device.K = <-copyKDone
+	pk.DeviceInfo.G1Device.Z = <-copyZDone
 
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	copyG2BDone := make(chan unsafe.Pointer, 1)
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	pk.G2Device.B = <-copyG2BDone
+	pk.DeviceInfo.G2Device.B = <-copyG2BDone
 
 	/*************************  End G2 Device Setup  ***************************/
 
@@ -155,7 +150,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	return nil
 }
 
-func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
+func Prove(r1cs *cs.R1CS, pk *groth16_bls12377.ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -163,14 +158,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
-	if opt.Accelerator != "icicle" {
-		return groth16_bls12377.Prove(r1cs, &pk.ProvingKey, fullWitness, opts...)
-	}
 
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
-	if pk.deviceInfo == nil {
+	if pk.DeviceInfo == nil {
 		log.Debug().Msg("precomputing proving key in GPU")
-		if err := pk.setupDevicePointers(); err != nil {
+		if err = SetupDevicePointers(pk); err != nil {
 			return nil, fmt.Errorf("setup device pointers: %w", err)
 		}
 	}
@@ -334,7 +326,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeBS1 := func() error {
 		<-chWireValuesB
 
-		if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
+		if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.DeviceInfo.G1Device.B, wireValuesBDevice.Size, true); err != nil {
 			return err
 		}
 
@@ -347,7 +339,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeAR1 := func() error {
 		<-chWireValuesA
 
-		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
+		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.DeviceInfo.G1Device.A, wireValuesADevice.Size, true); err != nil {
 			return err
 		}
 
@@ -364,7 +356,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		// check for small circuits as iciclegnark doesn't handle zero sizes well
 		if len(pk.G1.Z) > 0 {
-			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
+			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.DeviceInfo.G1Device.Z, sizeH, true); err != nil {
 				return err
 			}
 		}
@@ -377,14 +369,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		scalars = filterHeap(scalars, 0, pk.InfinityPointIndicesK)
+		scalars = filterHeap(scalars, 0, pk.DeviceInfo.InfinityPointIndicesK)
 		scalarBytes := len(scalars) * fr.Bytes
 
 		copyDone := make(chan unsafe.Pointer, 1)
 		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
 		scalars_d := <-copyDone
 
-		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
+		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.DeviceInfo.G1Device.K, len(scalars), true)
 		iciclegnark.FreeDevicePointer(scalars_d)
 
 		if err != nil {
@@ -411,7 +403,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var Bs, deltaS curve.G2Jac
 
 		<-chWireValuesB
-		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
+		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.DeviceInfo.G2Device.B, wireValuesBDevice.Size, true); err != nil {
 			return err
 		}
 
@@ -478,7 +470,7 @@ func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr
 	return
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *groth16_bls12377.ProvingKey) unsafe.Pointer {
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
@@ -508,9 +500,9 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 
 	computeInttNttDone := make(chan error, 1)
 	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
-		iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
+		iciclegnark.INttOnDevice(devicePointer, pk.DeviceInfo.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
 
-		iciclegnark.NttOnDevice(devicePointer, devicePointer, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
+		iciclegnark.NttOnDevice(devicePointer, devicePointer, pk.DeviceInfo.DomainDevice.Twiddles, pk.DeviceInfo.DomainDevice.CosetTable, n, n, sizeBytes, true)
 
 		computeInttNttDone <- nil
 	}
@@ -519,9 +511,9 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	go computeInttNttOnDevice(c_device)
 	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
 
-	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DeviceInfo.DenDevice, n)
 
-	iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	iciclegnark.INttOnDevice(a_device, pk.DeviceInfo.DomainDevice.TwiddlesInv, pk.DeviceInfo.DomainDevice.CosetTableInv, n, sizeBytes, true)
 
 	go func() {
 		iciclegnark.FreeDevicePointer(b_device)

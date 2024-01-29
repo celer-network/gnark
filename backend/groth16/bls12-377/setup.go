@@ -23,6 +23,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
+	icicle_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
 	"github.com/consensys/gnark/backend/groth16/internal"
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
@@ -55,6 +56,8 @@ type ProvingKey struct {
 	NbInfinityA, NbInfinityB uint64
 
 	CommitmentKeys []pedersen.ProvingKey
+
+	DeviceInfo *icicle_bls12377.DeviceInfo
 }
 
 // VerifyingKey is used by a Groth16 verifier to verify the validity of a proof and a statement
