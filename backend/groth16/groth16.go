@@ -372,7 +372,9 @@ func NewProvingKey(curveID ecc.ID) ProvingKey {
 	case ecc.BN254:
 		pk = &groth16_bn254.ProvingKey{}
 		if icicle_bn254.HasIcicle {
-			pk = &icicle_bn254.ProvingKey{}
+			pk = &icicle_bn254.ProvingKey{
+				ProvingKey: &groth16_bn254.ProvingKey{},
+			}
 		}
 	case ecc.BLS12_377:
 		pk = &groth16_bls12377.ProvingKey{}
@@ -386,7 +388,9 @@ func NewProvingKey(curveID ecc.ID) ProvingKey {
 	case ecc.BW6_761:
 		pk = &groth16_bw6761.ProvingKey{}
 		if icicle_bw6761.HasIcicle {
-			pk = &icicle_bw6761.ProvingKey{}
+			pk = &icicle_bw6761.ProvingKey{
+				ProvingKey: &groth16_bw6761.ProvingKey{},
+			}
 		}
 	case ecc.BLS24_317:
 		pk = &groth16_bls24317.ProvingKey{}
