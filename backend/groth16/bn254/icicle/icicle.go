@@ -209,35 +209,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		res.BigInt(out[0])
 		return nil
 	}))
-	// for i := range commitmentInfo {
-	// 	solverOpts = append(solverOpts, solver.OverrideHint(commitmentInfo[i].HintID, func(i int) solver.Hint {
-	// 		return func(_ *big.Int, in []*big.Int, out []*big.Int) error {
-	// 			privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
-	// 			hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
-	// 			committed := in[len(hashed):]
-	// 			for j, inJ := range committed {
-	// 				privateCommittedValues[i][j].SetBigInt(inJ)
-	// 			}
-
-	// 			var err error
-	// 			if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
-	// 				return err
-	// 			}
-
-	// 			opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
-	// 			hashBts := opt.HashToFieldFn.Sum(nil)
-	// 			opt.HashToFieldFn.Reset()
-	// 			nbBuf := fr.Bytes
-	// 			if opt.HashToFieldFn.Size() < fr.Bytes {
-	// 				nbBuf = opt.HashToFieldFn.Size()
-	// 			}
-	// 			var res fr.Element
-	// 			res.SetBytes(hashBts[:nbBuf])
-	// 			res.BigInt(out[0])
-	// 			return err
-	// 		}
-	// 	}(i)))
-	// }
 
 	if r1cs.GkrInfo.Is() {
 		var gkrData cs.GkrSolvingData
@@ -253,8 +224,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
-
-	start := time.Now()
 
 	commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
 	for i := range commitmentInfo {
@@ -285,6 +254,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	gpuResourceLock.Lock()
 	defer gpuResourceLock.Unlock()
+
+	start := time.Now()
 
 	// H (witness reduction / FFT part)
 	var h unsafe.Pointer

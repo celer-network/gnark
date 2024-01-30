@@ -226,8 +226,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
 
-	start := time.Now()
-
 	commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
 	for i := range commitmentInfo {
 		copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
@@ -257,6 +255,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	gpuResourceLock.Lock()
 	defer gpuResourceLock.Unlock()
+
+	start := time.Now()
 
 	var h unsafe.Pointer
 	chHDone := make(chan struct{}, 1)
