@@ -11,7 +11,6 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/plonk"
-	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/std/algebra/native/sw_bls12377"
@@ -127,17 +126,4 @@ func (c *AppCircuit) AssertAppProof(api frontend.API) error {
 		return fmt.Errorf("new verifier: %w", err)
 	}
 	return plonkVerifier.AssertProof(c.CustomVerifyingKey, c.CustomProof, c.CustomInnerWitness)
-}
-
-func WriteWitness(filename string, witness witness.Witness) error {
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-
-	_, err = witness.WriteTo(f)
-	if err != nil {
-		return err
-	}
-	return nil
 }
