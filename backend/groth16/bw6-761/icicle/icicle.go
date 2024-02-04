@@ -57,10 +57,18 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	copyCosetDone := make(chan unsafe.Pointer, 1)
 	copyDenDone := make(chan unsafe.Pointer, 1)
 	/*************************     CosetTableInv      ***************************/
-	go iciclegnark.CopyToDevice(pk.Domain.CosetTableInv, sizeBytes, copyCosetInvDone)
+	cti, err := pk.Domain.CosetTableInv()
+	if err != nil {
+		return err
+	}
+	go iciclegnark.CopyToDevice(cti, sizeBytes, copyCosetInvDone)
 
 	/*************************     CosetTable      ***************************/
-	go iciclegnark.CopyToDevice(pk.Domain.CosetTable, sizeBytes, copyCosetDone)
+	ct, err := pk.Domain.CosetTable()
+	if err != nil {
+		return err
+	}
+	go iciclegnark.CopyToDevice(ct, sizeBytes, copyCosetDone)
 
 	/*************************     Den      ***************************/
 	var denI, oneI fr.Element
