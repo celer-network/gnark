@@ -103,4 +103,9 @@ type Pairing[G1El G1ElementT, G2El G2ElementT, GtEl GtElementT] interface {
 	IsEqual(*GtEl, *GtEl) frontend.Variable
 
 	MulGT(P *GtEl, Q *GtEl) *GtEl
+	// AssertIsOnG1 asserts that the input is on the G1 curve.
+	AssertIsOnG1(*G1El)
+
+	// AssertIsOnG2 asserts that the input is on the G2 curve.
+	AssertIsOnG2(*G2El)
 }

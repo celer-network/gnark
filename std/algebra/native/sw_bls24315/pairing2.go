@@ -171,7 +171,7 @@ func (c *Curve) MultiScalarMul(P []*G1Affine, scalars []*Scalar, opts ...algopts
 		gamma := c.packScalarToVar(scalars[0])
 		// decompose gamma in the endomorphism eigenvalue basis and bit-decompose the sub-scalars
 		cc := getInnerCurveConfig(c.api.Compiler().Field())
-		sd, err := c.api.Compiler().NewHint(DecomposeScalarG1, 3, gamma)
+		sd, err := c.api.Compiler().NewHint(decomposeScalarG1, 3, gamma)
 		if err != nil {
 			panic(err)
 		}
@@ -313,6 +313,14 @@ func (p *Pairing) AssertIsEqual(e1, e2 *GT) {
 
 func (pr Pairing) IsEqual(e1, e2 *GT) frontend.Variable {
 	return 0
+}
+
+func (p *Pairing) AssertIsOnG1(P *G1Affine) {
+	panic("not implemented")
+}
+
+func (p *Pairing) AssertIsOnG2(P *G2Affine) {
+	panic("not implemented")
 }
 
 // NewG1Affine allocates a witness from the native G1 element and returns it.
