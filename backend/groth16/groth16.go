@@ -224,7 +224,9 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 			return nil, nil, err
 		}
 		if icicle_bls12377.HasIcicle {
-			return &icicle_bls12377.ProvingKey{ProvingKey: &pk}, &vk, nil
+			iciclePk := &icicle_bls12377.ProvingKey{ProvingKey: &pk}
+			err := icicle_bls12377.SetupDevicePointers(iciclePk)
+			return iciclePk, &vk, err
 		}
 		return &pk, &vk, nil
 	case *cs_bls12381.R1CS:

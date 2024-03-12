@@ -477,7 +477,7 @@ func (solver *solver) run() error {
 
 		// number of tasks for this level is set to number of CPU
 		// but if we don't have enough work for all our CPU, it can be lower.
-		nbTasks := runtime.NumCPU()
+		nbTasks := runtime.NumCPU() - 1
 		maxTasks := int(math.Ceil(maxCPU))
 		if nbTasks > maxTasks {
 			nbTasks = maxTasks
