@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -48,6 +49,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	if pk.deviceInfo != nil {
 		return nil
 	}
+	runtime.GC()
 	pk.deviceInfo = &deviceInfo{}
 	n := int(pk.Domain.Cardinality)
 	sizeBytes := n * fr.Bytes
@@ -158,6 +160,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1.K = nil
 	pk.Domain = fft.Domain{Cardinality: pk.Domain.Cardinality}
 
+	runtime.GC()
 	return nil
 }
 
@@ -446,11 +449,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
 	// free device/GPU memory that is not needed for future proofs (scalars/hpoly)
-	go func() {
-		iciclegnark.FreeDevicePointer(wireValuesADevice.P)
-		iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
-		iciclegnark.FreeDevicePointer(h)
-	}()
+	iciclegnark.FreeDevicePointer(wireValuesADevice.P)
+	iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
+	iciclegnark.FreeDevicePointer(h)
 
 	return proof, nil
 }
