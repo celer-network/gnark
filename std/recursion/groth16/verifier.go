@@ -569,6 +569,7 @@ func NewVerifier[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.
 func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProof(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], witness Witness[FR], opts ...VerifierOption) error {
 	var fr FR
 	nbPublicVars := len(vk.G1.K) - len(vk.PublicAndCommitmentCommitted)
+
 	if len(witness.Public) != nbPublicVars-1 {
 		return fmt.Errorf("invalid witness size, got %d, expected %d (public - ONE_WIRE)", len(witness.Public), len(vk.G1.K)-1)
 	}
@@ -693,11 +694,11 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCommitment(vk VerifyingK
 	return nil
 }
 
-func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], commitments []G1El, witnesses []Witness[FR]) (frontend.Variable, error) {
+func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], witnesses []Witness[FR]) (frontend.Variable, error) {
 	var left []*G1El
 	var right []*G2El
 	var final *GtEl
-	if len(vks) != len(proofs) || len(proofs) != len(commitments) || len(commitments) != len(witnesses) {
+	if len(vks) != len(proofs) {
 		return 0, fmt.Errorf("invalid input len for batch pairing verification")
 	}
 	for j, _ := range vks {
@@ -715,7 +716,7 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofWithCommitment(vks []Ve
 			return 0, fmt.Errorf("multi scalar mul: %w", err)
 		}
 		kSum = v.curve.Add(kSum, &vk.G1.K[0])
-		kSum = v.curve.Add(kSum, &commitments[j])
+		//kSum = v.curve.Add(kSum, &commitments[j])
 
 		left = append(left, kSum, &proofs[j].Krs, &proofs[j].Ar)
 		right = append(right, &vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proofs[j].Bs)

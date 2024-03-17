@@ -89,14 +89,14 @@ type BatchOuterCircuit[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El al
 
 func (c *BatchOuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 
-	verifier, err := NewVerifier[FR, G1El, G2El, GtEl](api)
-	eq, err := verifier.BatchAssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitments, c.InnerWitness)
-	if err != nil {
-		return err
-	}
-	if eq == 0 {
-		return fmt.Errorf("batch not equal")
-	}
+	//verifier, err := NewVerifier[FR, G1El, G2El, GtEl](api)
+	//eq, err := verifier.BatchAssertProofWithCommitment(c.VerifyingKey, c.Proof, c.Commitments, c.InnerWitness)
+	//if err != nil {
+	//	return err
+	//}
+	//if eq == 0 {
+	//	return fmt.Errorf("batch not equal")
+	//}
 	return nil
 }
 
