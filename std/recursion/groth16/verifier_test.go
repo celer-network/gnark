@@ -131,39 +131,6 @@ func TestBLS12InBW6(t *testing.T) {
 	assert.NoError(err)
 }
 
-func TestBLS12InBW6WithConstraint(t *testing.T) {
-	assert := test.NewAssert(t)
-	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BLS12_377.ScalarField())
-
-	// outer proof
-	circuitVk, err := ValueOfVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerVK)
-	assert.NoError(err)
-	circuitWitness, err := ValueOfWitness[sw_bls12377.ScalarField](innerWitness)
-	assert.NoError(err)
-	circuitProof, err := ValueOfProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerProof)
-	assert.NoError(err)
-
-	outerCircuit := &OuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		InnerWitness: PlaceholderWitness[sw_bls12377.ScalarField](innerCcs),
-		VerifyingKey: PlaceholderVerifyingKey[sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT](innerCcs),
-		Proof:        PlaceholderProof[sw_bls12377.G1Affine, sw_bls12377.G2Affine](innerCcs),
-	}
-	outerAssignment := &OuterCircuit[sw_bls12377.ScalarField, sw_bls12377.G1Affine, sw_bls12377.G2Affine, sw_bls12377.GT]{
-		InnerWitness: circuitWitness,
-		Proof:        circuitProof,
-		VerifyingKey: circuitVk,
-	}
-
-	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BW6_761.ScalarField())
-	assert.NoError(err)
-
-	ccs1, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, outerCircuit)
-	assert.NoError(err)
-	ccs2, err := frontend.Compile(ecc.BW6_761.ScalarField(), r1cs.NewBuilder, outerAssignment)
-	assert.NoError(err)
-	fmt.Printf("%d %d", ccs1.GetNbConstraints(), ccs2.GetNbConstraints())
-}
-
 func TestBW6InBN254(t *testing.T) {
 	assert := test.NewAssert(t)
 	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BW6_761.ScalarField())
