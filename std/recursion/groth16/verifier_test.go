@@ -104,6 +104,25 @@ func TestBN254InBN254(t *testing.T) {
 	}
 	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+
+	w, err := frontend.NewWitness(outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+	pubW, err := w.Public()
+	assert.NoError(err)
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, outerCircuit)
+	assert.NoError(err)
+
+	fmt.Printf("ccs: %d \n", ccs.GetNbConstraints())
+
+	pk, vk, err := groth16.Setup(ccs)
+	assert.NoError(err)
+
+	proof, err := groth16.Prove(ccs, pk, w)
+	assert.NoError(err)
+
+	err = groth16.Verify(proof, vk, pubW)
+	assert.NoError(err)
 }
 
 func TestBLS12InBW6(t *testing.T) {
