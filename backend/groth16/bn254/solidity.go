@@ -79,6 +79,20 @@ contract Verifier {
     uint256 constant DELTA_NEG_Y_0 = {{.G2.Delta.Y.A0.String}};
     uint256 constant DELTA_NEG_Y_1 = {{.G2.Delta.Y.A1.String}};
 
+	// VK CommitmentKey pedersen G
+	uint256 constant VK_PEDERSEN_G_X_0 = {{.CommitmentKey.G.X.A0.String}};
+    uint256 constant VK_PEDERSEN_G_X_1 = {{.CommitmentKey.G.X.A1.String}};
+    uint256 constant VK_PEDERSEN_G_Y_0 = {{.CommitmentKey.G.Y.A0.String}};
+    uint256 constant VK_PEDERSEN_G_Y_1 = {{.CommitmentKey.G.Y.A1.String}};
+
+	// VK CommitmentKey pedersen GRootSigmaNeg
+	uint256 constant VK_PEDERSEN_G_ROOT_SIGMA_NEG_X_0 = {{.CommitmentKey.GRootSigmaNeg.X.A0.String}};
+    uint256 constant VK_PEDERSEN_G_ROOT_SIGMA_NEG_X_1 = {{.CommitmentKey.GRootSigmaNeg.X.A1.String}};
+    uint256 constant VK_PEDERSEN_G_ROOT_SIGMA_NEG_Y_0 = {{.CommitmentKey.GRootSigmaNeg.Y.A0.String}};
+    uint256 constant VK_PEDERSEN_G_ROOT_SIGMA_NEG_Y_1 = {{.CommitmentKey.GRootSigmaNeg.Y.A1.String}};
+
+	uint256 constant MOD_R = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
     // Constant and public input points
     {{- $k0 := index .G1.K 0}}
     uint256 constant CONSTANT_X = {{$k0.X.String}};
@@ -404,6 +418,63 @@ contract Verifier {
         }
     }
 
+	/// Compute the public input linear combination.
+    /// @notice Reverts with PublicInputNotInField if the input is not in the field.
+    /// @notice Computes the multi-scalar-multiplication of the public input
+    /// elements and the verification key including the constant term.
+    /// @param input The public inputs. These are elements of the scalar field Fr.
+    /// @return x The X coordinate of the resulting G1 point.
+    /// @return y The Y coordinate of the resulting G1 point.
+    function publicInputMSMWithCommit(
+        uint256[{{$numPublic}}] calldata input,
+        uint256[2] calldata commit
+    ) internal view returns (uint256 x, uint256 y) {
+        // Note: The ECMUL precompile does not reject unreduced values, so we check this.
+        // Note: Unrolling this loop does not cost much extra in code-size, the bulk of the
+        //       code-size is in the PUB_ constants.
+        // ECMUL has input (x, y, scalar) and output (x', y').
+        // ECADD has input (x1, y1, x2, y2) and output (x', y').
+        // We call them such that ecmul output is already in the second point
+        // argument to ECADD so we can have a tight loop.
+        bool success = true;
+        assembly ("memory-safe") {
+            let f := mload(0x40)
+            let g := add(f, 0x40)
+            let s
+            mstore(f, CONSTANT_X)
+            mstore(add(f, 0x20), CONSTANT_Y)
+            mstore(g, PUB_0_X)
+            mstore(add(g, 0x20), PUB_0_Y)
+            s := calldataload(input)
+            mstore(add(g, 0x40), s)
+            success := and(success, lt(s, R))
+            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))
+            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+            mstore(g, PUB_1_X)
+            mstore(add(g, 0x20), PUB_1_Y)
+            s := calldataload(add(input, 32))
+            mstore(add(g, 0x40), s)
+            success := and(success, lt(s, R))
+            success := and(success, staticcall(gas(), PRECOMPILE_MUL, g, 0x60, g, 0x40))
+            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+
+            s := calldataload(commit)
+            mstore(g, s) // save commit[0]
+            x := calldataload(add(commit, 32))
+            mstore(add(g, 0x20), x) // save commit[1]
+
+            success := and(success, staticcall(gas(), PRECOMPILE_ADD, f, 0x80, f, 0x40))
+
+            x := mload(f)
+            y := mload(add(f, 0x20))
+        }
+        if (!success) {
+            // Either Public input not in field, or verification key invalid.
+            // We assume the contract is correctly generated, so the verification key is valid.
+            revert PublicInputNotInField();
+        }
+    }
+
     /// Compress a proof.
     /// @notice Will revert with InvalidProof if the curve points are invalid,
     /// but does not verify the proof itself.
@@ -533,6 +604,81 @@ contract Verifier {
             // Check pairing equation.
             success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x300, f, 0x20)
             // Also check returned value (both are either 1 or 0).
+            success := and(success, mload(f))
+        }
+        if (!success) {
+            // Either proof or verification key invalid.
+            // We assume the contract is correctly generated, so the verification key is valid.
+            revert ProofInvalid();
+        }
+    }
+
+	function verifyProofWithCommitAll(
+        uint256[8] calldata proof,
+        uint256[2] calldata commit,
+        uint256[{{$numPublic}}] calldata input,
+        uint256[2] calldata knowledgeProof
+    ) public view {
+        uint256 inputFr = uint256(keccak256(abi.encodePacked(commit[0], commit[1]))) % MOD_R;
+        require(inputFr == input[1], "witness fr mismatch");
+
+        (uint256 x, uint256 y) = publicInputMSMWithCommit(input, commit);
+
+        // Note: The precompile expects the F2 coefficients in big-endian order.
+        // Note: The pairing precompile rejects unreduced values, so we won't check that here.
+        bool success;
+        assembly ("memory-safe") {
+            let f := mload(0x40) // Free memory pointer.
+
+        // Copy points (A, B, C) to memory. They are already in correct encoding.
+        // This is pairing e(A, B) and G1 of e(C, -δ).
+            calldatacopy(f, proof, 0x100)
+
+        // Complete e(C, -δ) and write e(α, -β), e(L_pub, -γ) to memory.
+        // OPT: This could be better done using a single codecopy, but
+        //      Solidity (unlike standalone Yul) doesn't provide a way to
+        //      to do this.
+            mstore(add(f, 0x100), DELTA_NEG_X_1)
+            mstore(add(f, 0x120), DELTA_NEG_X_0)
+            mstore(add(f, 0x140), DELTA_NEG_Y_1)
+            mstore(add(f, 0x160), DELTA_NEG_Y_0)
+            mstore(add(f, 0x180), ALPHA_X)
+            mstore(add(f, 0x1a0), ALPHA_Y)
+            mstore(add(f, 0x1c0), BETA_NEG_X_1)
+            mstore(add(f, 0x1e0), BETA_NEG_X_0)
+            mstore(add(f, 0x200), BETA_NEG_Y_1)
+            mstore(add(f, 0x220), BETA_NEG_Y_0)
+            mstore(add(f, 0x240), x)
+            mstore(add(f, 0x260), y)
+            mstore(add(f, 0x280), GAMMA_NEG_X_1)
+            mstore(add(f, 0x2a0), GAMMA_NEG_X_0)
+            mstore(add(f, 0x2c0), GAMMA_NEG_Y_1)
+            mstore(add(f, 0x2e0), GAMMA_NEG_Y_0)
+
+            let c
+            c := calldataload(commit)
+            mstore(add(f, 0x300), c) // save commitment[0]
+            c := calldataload(add(commit, 32))
+            mstore(add(f, 0x320), c) // save commitment[1]
+
+            mstore(add(f, 0x340), VK_PEDERSEN_G_X_1)
+            mstore(add(f, 0x360), VK_PEDERSEN_G_X_0)
+            mstore(add(f, 0x380), VK_PEDERSEN_G_Y_1)
+            mstore(add(f, 0x3a0), VK_PEDERSEN_G_Y_0)
+
+            c := calldataload(knowledgeProof)
+            mstore(add(f, 0x3c0), c) // save knowledgeProof[0]
+            c := calldataload(add(knowledgeProof, 32))
+            mstore(add(f, 0x3e0), c) // save knowledgeProof[1]
+
+            mstore(add(f, 0x400), VK_PEDERSEN_G_ROOT_SIGMA_NEG_X_1)
+            mstore(add(f, 0x420), VK_PEDERSEN_G_ROOT_SIGMA_NEG_X_0)
+            mstore(add(f, 0x440), VK_PEDERSEN_G_ROOT_SIGMA_NEG_Y_1)
+            mstore(add(f, 0x460), VK_PEDERSEN_G_ROOT_SIGMA_NEG_Y_0)
+
+        // Check pairing equation.
+            success := staticcall(gas(), PRECOMPILE_VERIFY, f, 0x480, f, 0x20)
+        // Also check returned value (both are either 1 or 0).
             success := and(success, mload(f))
         }
         if (!success) {
