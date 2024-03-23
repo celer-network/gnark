@@ -159,6 +159,12 @@ func PlaceholderProof[G1El algebra.G1ElementT, G2El algebra.G2ElementT](ccs cons
 	}
 }
 
+func PlaceholderProofWithParam[G1El algebra.G1ElementT, G2El algebra.G2ElementT](commitmentsLen int) Proof[G1El, G2El] {
+	return Proof[G1El, G2El]{
+		Commitments: make([]pedersen.Commitment[G1El], commitmentsLen),
+	}
+}
+
 // VerifyingKey is a typed Groth16 verifying key for checking SNARK proofs. For
 // witness creation use the method [ValueOfVerifyingKey] and for stub
 // placeholder use [PlaceholderVerifyingKey].
@@ -184,6 +190,21 @@ func PlaceholderVerifyingKey[G1El algebra.G1ElementT, G2El algebra.G2ElementT, G
 		},
 		PublicAndCommitmentCommitted: commitments.GetPublicAndCommitmentCommitted(commitmentWires, ccs.GetNbPublicVariables()),
 	}
+}
+
+func PlaceholderVerifyingKeyWithParam[G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT](nbPublicVariables, commitmentsLen int, publicAndCommitmentCommitted [][]int) VerifyingKey[G1El, G2El, GtEl] {
+	return VerifyingKey[G1El, G2El, GtEl]{
+		G1: struct{ K []G1El }{
+			K: make([]G1El, nbPublicVariables+commitmentsLen),
+		},
+		PublicAndCommitmentCommitted: publicAndCommitmentCommitted,
+	}
+}
+
+func PlaceholderParamFromCcs(ccs constraint.ConstraintSystem) (nbPublicVariables, commitmentsLen int, publicAndCommitmentCommitted [][]int) {
+	commitments := ccs.GetCommitments().(constraint.Groth16Commitments)
+	commitmentWires := commitments.CommitmentIndexes()
+	return ccs.GetNbPublicVariables(), len(ccs.GetCommitments().(constraint.Groth16Commitments)), commitments.GetPublicAndCommitmentCommitted(commitmentWires, ccs.GetNbPublicVariables())
 }
 
 // ValueOfVerifyingKey initializes witness from the given Groth16 verifying key.
@@ -465,6 +486,12 @@ type Witness[FR emulated.FieldParams] struct {
 func PlaceholderWitness[FR emulated.FieldParams](ccs constraint.ConstraintSystem) Witness[FR] {
 	return Witness[FR]{
 		Public: make([]emulated.Element[FR], ccs.GetNbPublicVariables()-1),
+	}
+}
+
+func PlaceholderWitnessWithParam[FR emulated.FieldParams](nbPublicVariables int) Witness[FR] {
+	return Witness[FR]{
+		Public: make([]emulated.Element[FR], nbPublicVariables-1),
 	}
 }
 
