@@ -675,6 +675,169 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProof(vk VerifyingKey[G1El, G2El,
 	return nil
 }
 
+// AssertProof asserts that the SNARK proof holds for the given witness and
+// verifying key.
+func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofBrevis(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], witness Witness[FR], opts ...VerifierOption) error {
+	var fr FR
+	nbPublicVars := len(vk.G1.K) - len(vk.PublicAndCommitmentCommitted)
+	if len(witness.Public) != nbPublicVars-1 {
+		return fmt.Errorf("invalid witness size, got %d, expected %d (public - ONE_WIRE)", len(witness.Public), len(vk.G1.K)-1)
+	}
+
+	inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
+	for i := range inP {
+		inP[i] = &vk.G1.K[i+1]
+	}
+	inS := make([]*emulated.Element[FR], len(witness.Public)+len(vk.PublicAndCommitmentCommitted))
+	for i := range witness.Public {
+		inS[i] = &witness.Public[i]
+	}
+
+	opt, err := newCfg(opts...)
+	if err != nil {
+		return fmt.Errorf("apply options: %w", err)
+	}
+	hashToField, err := recursion.NewHash(v.api, fr.Modulus(), true)
+	if err != nil {
+		return fmt.Errorf("hash to field: %w", err)
+	}
+
+	maxNbPublicCommitted := 0
+	for _, s := range vk.PublicAndCommitmentCommitted { // iterate over commitments
+		maxNbPublicCommitted = utils.Max(maxNbPublicCommitted, len(s))
+	}
+
+	commitmentAuxData := make([]*emulated.Element[FR], len(vk.PublicAndCommitmentCommitted))
+	for i := range vk.PublicAndCommitmentCommitted { // solveCommitmentWire
+		hashToField.Write(v.curve.MarshalG1(proof.Commitments[i].G1El)...)
+		for j := range vk.PublicAndCommitmentCommitted[i] {
+			hashToField.Write(v.curve.MarshalScalar(*inS[vk.PublicAndCommitmentCommitted[i][j]-1])...)
+		}
+
+		h := hashToField.Sum()
+		hashToField.Reset()
+
+		res := v.scalarApi.FromBits(v.api.ToBinary(h)...)
+
+		inS[nbPublicVars-1+i] = res
+		commitmentAuxData[i] = res
+	}
+
+	folded := proof.Commitments[0]
+
+	kSum, err := v.curve.MultiScalarMul(inP, inS, opt.algopt...)
+	if err != nil {
+		return fmt.Errorf("multi scalar mul: %w", err)
+	}
+	kSum = v.curve.Add(kSum, &vk.G1.K[0])
+
+	for i := range proof.Commitments {
+		kSum = v.curve.Add(kSum, &proof.Commitments[i].G1El)
+	}
+
+	if opt.forceSubgroupCheck {
+		v.pairing.AssertIsOnG1(&proof.Ar)
+		v.pairing.AssertIsOnG1(&proof.Krs)
+		v.pairing.AssertIsOnG2(&proof.Bs)
+	}
+	pairing, err := v.pairing.Pair([]*G1El{kSum, &proof.Krs, &proof.Ar, &folded.G1El, &proof.CommitmentPok.G1El},
+		[]*G2El{&vk.G2.GammaNeg, &vk.G2.DeltaNeg, &proof.Bs, &vk.CommitmentKey.G, &vk.CommitmentKey.GRootSigmaNeg})
+	if err != nil {
+		return fmt.Errorf("pairing: %w", err)
+	}
+	v.pairing.AssertIsEqual(pairing, &vk.E)
+	return nil
+}
+
+// AssertProof asserts that the SNARK proof holds for the given witness and
+// verifying key.
+func (v *Verifier[FR, G1El, G2El, GtEl]) BatchAssertProofBrevis(vks []VerifyingKey[G1El, G2El, GtEl], proofs []Proof[G1El, G2El], witnesses []Witness[FR], opts ...VerifierOption) error {
+	var fr FR
+
+	var left []*G1El
+	var right []*G2El
+	var final *GtEl
+	if len(vks) != len(proofs) {
+		return fmt.Errorf("invalid input len for batch pairing verification")
+	}
+
+	for x := 0; x < len(vks); x++ {
+		nbPublicVars := len(vks[x].G1.K) - len(vks[x].PublicAndCommitmentCommitted)
+		if len(witnesses[x].Public) != nbPublicVars-1 {
+			return fmt.Errorf("invalid witness size, got %d, expected %d (public - ONE_WIRE)", len(witnesses[x].Public), len(vks[x].G1.K)-1)
+		}
+
+		inP := make([]*G1El, len(vks[x].G1.K)-1) // first is for the one wire, we add it manually after MSM
+		for i := range inP {
+			inP[i] = &vks[x].G1.K[i+1]
+		}
+		inS := make([]*emulated.Element[FR], len(witnesses[x].Public)+len(vks[x].PublicAndCommitmentCommitted))
+		for i := range witnesses[x].Public {
+			inS[i] = &witnesses[x].Public[i]
+		}
+
+		opt, err := newCfg(opts...)
+		if err != nil {
+			return fmt.Errorf("apply options: %w", err)
+		}
+		hashToField, err := recursion.NewHash(v.api, fr.Modulus(), true)
+		if err != nil {
+			return fmt.Errorf("hash to field: %w", err)
+		}
+
+		maxNbPublicCommitted := 0
+		for _, s := range vks[x].PublicAndCommitmentCommitted { // iterate over commitments
+			maxNbPublicCommitted = utils.Max(maxNbPublicCommitted, len(s))
+		}
+
+		commitmentAuxData := make([]*emulated.Element[FR], len(vks[x].PublicAndCommitmentCommitted))
+		for i := range vks[x].PublicAndCommitmentCommitted { // solveCommitmentWire
+			hashToField.Write(v.curve.MarshalG1(proofs[x].Commitments[i].G1El)...)
+			for j := range vks[x].PublicAndCommitmentCommitted[i] {
+				hashToField.Write(v.curve.MarshalScalar(*inS[vks[x].PublicAndCommitmentCommitted[i][j]-1])...)
+			}
+
+			h := hashToField.Sum()
+			hashToField.Reset()
+
+			res := v.scalarApi.FromBits(v.api.ToBinary(h)...)
+
+			inS[nbPublicVars-1+i] = res
+			commitmentAuxData[i] = res
+		}
+
+		// only one commitments
+		folded := proofs[x].Commitments[0]
+
+		kSum, err := v.curve.MultiScalarMul(inP, inS, opt.algopt...)
+		if err != nil {
+			return fmt.Errorf("multi scalar mul: %w", err)
+		}
+		kSum = v.curve.Add(kSum, &vks[x].G1.K[0])
+
+		for i := range proofs[x].Commitments {
+			kSum = v.curve.Add(kSum, &proofs[x].Commitments[i].G1El)
+		}
+
+		if x == 0 {
+			final = &vks[x].E
+		} else {
+			final = v.pairing.MulGT(final, &vks[x].E)
+		}
+
+		left = append(left, kSum, &proofs[x].Krs, &proofs[x].Ar, &folded.G1El, &proofs[x].CommitmentPok.G1El)
+		right = append(right, &vks[x].G2.GammaNeg, &vks[x].G2.DeltaNeg, &proofs[x].Bs, &vks[x].CommitmentKey.G, &vks[x].CommitmentKey.GRootSigmaNeg)
+
+	}
+
+	pairing, err := v.pairing.Pair(left, right)
+	if err != nil {
+		return fmt.Errorf("pairing error: %w", err)
+	}
+	v.pairing.AssertIsEqual(pairing, final)
+	return nil
+}
+
 // return 1 is pass, return 0 is fail
 func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProofWithCmpReturn(vk VerifyingKey[G1El, G2El, GtEl], proof Proof[G1El, G2El], witness Witness[FR]) (frontend.Variable, error) {
 	inP := make([]*G1El, len(vk.G1.K)-1) // first is for the one wire, we add it manually after MSM
