@@ -645,3 +645,24 @@ func (v *Verifier[FR, G1El, G2El, GtEl]) AssertProof(vk VerifyingKey[G1El, G2El,
 	v.pairing.AssertIsEqual(pairing, &vk.E)
 	return nil
 }
+
+func PlaceholderProofWithParam[G1El algebra.G1ElementT, G2El algebra.G2ElementT](commitmentsLen int) Proof[G1El, G2El] {
+	return Proof[G1El, G2El]{
+		Commitments: make([]pedersen.Commitment[G1El], commitmentsLen),
+	}
+}
+
+func PlaceholderVerifyingKeyWithParam[G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT](nbPublicVariables, commitmentsLen int, publicAndCommitmentCommitted [][]int) VerifyingKey[G1El, G2El, GtEl] {
+	return VerifyingKey[G1El, G2El, GtEl]{
+		G1: struct{ K []G1El }{
+			K: make([]G1El, nbPublicVariables+commitmentsLen),
+		},
+		PublicAndCommitmentCommitted: publicAndCommitmentCommitted,
+	}
+}
+
+func PlaceholderWitnessWithParam[FR emulated.FieldParams](nbPublicVariables int) Witness[FR] {
+	return Witness[FR]{
+		Public: make([]emulated.Element[FR], nbPublicVariables-1),
+	}
+}
