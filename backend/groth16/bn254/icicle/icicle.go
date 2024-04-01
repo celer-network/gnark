@@ -21,6 +21,7 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	"github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
 	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
 	"math/big"
 	"runtime"
@@ -51,6 +52,30 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	copyADone := make(chan core.DeviceSlice, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	pk.G1Device.A = <-copyADone
+
+	// ntt config
+	cfg := bn254.GetDefaultNttConfig()
+	var s bn254.ScalarField
+
+	// set pk.Domain.CosetTable[1]
+	cosetTable, err := pk.Domain.CosetTable()
+	if err != nil {
+		return err
+	}
+	coset := cosetTable[1]
+	cosetBits := coset.Bits()
+	var configCosetGen [8]uint32
+	configCosetGenRaw := core.ConvertUint64ArrToUint32Arr(cosetBits[:])
+	if len(configCosetGenRaw) != 8 {
+		return fmt.Errorf("len mismatch: %d != 8", len(configCosetGenRaw))
+	}
+	copy(configCosetGen[:], configCosetGenRaw[:8])
+	cfg.CosetGen = configCosetGen
+
+	// domain.Generator
+	genBits := pk.Domain.Generator.Bits()
+	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
+	bn254.InitDomain(s, cfg.Ctx, true)
 
 	return nil
 }
