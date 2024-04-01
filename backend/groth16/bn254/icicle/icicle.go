@@ -265,8 +265,23 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		chKrs2Done := make(chan error, 1)
 		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
 		go func() {
-			_, err := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
-			chKrs2Done <- err
+			_, kerr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+
+			krs2InGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.Z, h[:sizeH])
+			if gerr != nil {
+				chKrsDone <- gerr
+				return
+			}
+
+			var krs2JacInGpu curve.G1Jac
+			krs2JacInGpu.FromAffine(krs2InGpu)
+			if krs2JacInGpu.Equal(&krs2) {
+				fmt.Printf("krs2JacInGpu equal \n")
+			} else {
+				fmt.Printf("krs2JacInGpu not equal \n")
+			}
+
+			chKrs2Done <- kerr
 		}()
 
 		// filter the wire values if needed
@@ -280,9 +295,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
+		// TODO
+		// filter zero/infinity points since icicle doesn't handle them
+		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
 		krsInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.K, _wireValues)
 		if gerr != nil {
-			chKrsDone <- err
+			chKrsDone <- gerr
 			return
 		}
 
