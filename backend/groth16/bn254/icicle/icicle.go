@@ -475,3 +475,8 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 
 	return a
 }
+
+func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+
+	return nil
+}
