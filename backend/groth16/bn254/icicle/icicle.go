@@ -275,10 +275,25 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
 		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
 
-		if _, err := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+		if _, merr := krs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2}); merr != nil {
+			chKrsDone <- merr
+			return
+		}
+
+		krsInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.K, _wireValues)
+		if gerr != nil {
 			chKrsDone <- err
 			return
 		}
+
+		var krsJacInGpu curve.G1Jac
+		krsJacInGpu.FromAffine(krsInGpu)
+		if krsJacInGpu.Equal(&krs) {
+			fmt.Printf("krsJacInGpu equal \n")
+		} else {
+			fmt.Printf("krsJacInGpu not equal \n")
+		}
+
 		krs.AddMixed(&deltas[2])
 		n := 3
 		for n != 0 {
