@@ -43,7 +43,7 @@ func SetupDevicePointers(pk *ProvingKey) error {
 func (pk *ProvingKey) setupDevicePointers() error {
 	setupDeviceLock.Lock()
 	defer setupDeviceLock.Unlock()
-
+	pk.deviceInfo = &deviceInfo{}
 	copyADone := make(chan core.DeviceSlice, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	pk.G1Device.A = <-copyADone
