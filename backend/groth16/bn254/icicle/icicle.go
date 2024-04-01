@@ -43,7 +43,11 @@ func SetupDevicePointers(pk *ProvingKey) error {
 func (pk *ProvingKey) setupDevicePointers() error {
 	setupDeviceLock.Lock()
 	defer setupDeviceLock.Unlock()
+	if pk.deviceInfo != nil {
+		return nil
+	}
 	pk.deviceInfo = &deviceInfo{}
+
 	copyADone := make(chan core.DeviceSlice, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	pk.G1Device.A = <-copyADone
@@ -158,6 +162,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesA[j] = wireValues[i]
 			j++
 		}
+
 		close(chWireValuesA)
 	}()
 	go func() {
@@ -169,6 +174,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			wireValuesB[j] = wireValues[i]
 			j++
 		}
+
 		close(chWireValuesB)
 	}()
 
@@ -209,11 +215,28 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	chArDone := make(chan error, 1)
 	computeAR1 := func() {
 		<-chWireValuesA
-		if _, err := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chArDone <- err
+
+		arInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.A, wireValuesA)
+		if gerr != nil {
+			chArDone <- gerr
 			close(chArDone)
 			return
 		}
+		var arJacInGpu curve.G1Jac
+		arJacInGpu.FromAffine(arInGpu)
+
+		if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
+			chArDone <- merr
+			close(chArDone)
+			return
+		}
+
+		if arJacInGpu.Equal(&ar) {
+			fmt.Printf("arJacInGpu equal \n")
+		} else {
+			fmt.Printf("arJacInGpu not equal \n")
+		}
+
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
