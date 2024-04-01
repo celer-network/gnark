@@ -354,8 +354,22 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			nbTasks *= 2
 		}
 		<-chWireValuesB
-		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-			return err
+
+		if _, merr := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); merr != nil {
+			return merr
+		}
+
+		bsInGpu, gerr := iciclegnark.G2MsmOnDevice(pk.G2.B, wireValuesB)
+		if gerr != nil {
+			return gerr
+		}
+
+		var bsJacInGpu curve.G2Jac
+		bsJacInGpu.FromAffine(bsInGpu)
+		if bsJacInGpu.Equal(&Bs) {
+			fmt.Printf("bsJacInGpu equal \n")
+		} else {
+			fmt.Printf("bsJacInGpu not equal \n")
 		}
 
 		deltaS.FromAffine(&pk.G2.Delta)
