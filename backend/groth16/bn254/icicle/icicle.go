@@ -5,14 +5,9 @@ package icicle_bn254
 import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
-	"math/big"
-	"runtime"
-	"sync"
-	"time"
-
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/pedersen"
 	"github.com/consensys/gnark/backend"
@@ -25,6 +20,12 @@ import (
 	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
+	"math/big"
+	"runtime"
+	"sync"
+	"time"
 )
 
 const HasIcicle = true
@@ -43,6 +44,8 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	setupDeviceLock.Lock()
 	defer setupDeviceLock.Unlock()
 
+	copyADone := make(chan core.DeviceSlice, 1)
+	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	return nil
 }
 
@@ -55,6 +58,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
+	}
+
+	err = pk.setupDevicePointers()
+	if err != nil {
+		return nil, err
 	}
 
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "none").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
