@@ -202,11 +202,26 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	chBs1Done := make(chan error, 1)
 	computeBS1 := func() {
 		<-chWireValuesB
-		if _, err := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chBs1Done <- err
+		if _, merr := bs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2}); merr != nil {
+			chBs1Done <- merr
 			close(chBs1Done)
 			return
 		}
+
+		bs1InGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.B, wireValuesB)
+		if gerr != nil {
+			chBs1Done <- gerr
+			close(chBs1Done)
+			return
+		}
+		var bs1JacInGpu curve.G1Jac
+		bs1JacInGpu.FromAffine(bs1InGpu)
+		if bs1JacInGpu.Equal(&bs1) {
+			fmt.Printf("bs1JacInGpu equal \n")
+		} else {
+			fmt.Printf("bs1JacInGpu not equal \n")
+		}
+
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
 		chBs1Done <- nil
@@ -215,6 +230,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	chArDone := make(chan error, 1)
 	computeAR1 := func() {
 		<-chWireValuesA
+		if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); merr != nil {
+			chArDone <- merr
+			close(chArDone)
+			return
+		}
 
 		arInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.A, wireValuesA)
 		if gerr != nil {
@@ -224,13 +244,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		}
 		var arJacInGpu curve.G1Jac
 		arJacInGpu.FromAffine(arInGpu)
-
-		if _, merr := ar.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2}); err != nil {
-			chArDone <- merr
-			close(chArDone)
-			return
-		}
-
 		if arJacInGpu.Equal(&ar) {
 			fmt.Printf("arJacInGpu equal \n")
 		} else {
