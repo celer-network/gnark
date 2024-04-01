@@ -1,6 +1,7 @@
 package icicle_bn254
 
 import (
+	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
 	"io"
 	"unsafe"
 
@@ -10,16 +11,16 @@ import (
 
 type deviceInfo struct {
 	G1Device struct {
-		A, B, K, Z unsafe.Pointer
+		A, B, K, Z core.DeviceSlice
 	}
 	DomainDevice struct {
-		Twiddles, TwiddlesInv     unsafe.Pointer
+		Twiddles, TwiddlesInv     core.DeviceSlice
 		CosetTable, CosetTableInv unsafe.Pointer
 	}
 	G2Device struct {
-		B unsafe.Pointer
+		B core.DeviceSlice
 	}
-	DenDevice             unsafe.Pointer
+	DenDevice             core.DeviceSlice
 	InfinityPointIndicesK []int
 }
 
