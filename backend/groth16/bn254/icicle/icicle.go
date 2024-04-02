@@ -296,7 +296,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		arInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.A, wireValuesA)
+		arInGpu, gerr := MsmOnDevice(pk.G1Device.A, wireValuesA)
 		if gerr != nil {
 			chArDone <- gerr
 			close(chArDone)
@@ -327,7 +327,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		go func() {
 			_, kerr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
 
-			krs2InGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.Z, h[:sizeH])
+			krs2InGpu, gerr := MsmOnDevice(pk.G1Device.Z, h[:sizeH])
 			if gerr != nil {
 				chKrsDone <- gerr
 				return
@@ -358,7 +358,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// TODO
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		krsInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.K, _wireValues)
+		krsInGpu, gerr := MsmOnDevice(pk.G1Device.K, _wireValues)
 		if gerr != nil {
 			chKrsDone <- gerr
 			return
@@ -419,7 +419,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return merr
 		}
 
-		bsInGpu, gerr := iciclegnark_bn254.G2MsmOnDevice(pk.G2.B, wireValuesB)
+		bsInGpu, gerr := G2MsmOnDevice(pk.G2Device.B, wireValuesB)
 		if gerr != nil {
 			return gerr
 		}
@@ -559,4 +559,24 @@ func MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curv
 	outHost.CopyFromDevice(&out)
 	out.Free()
 	return iciclegnark_bn254.ProjectiveToGnarkAffine(&outHost[0]), nil
+}
+
+func G2MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curve.G2Affine, error) {
+	icicleScalars := core.HostSliceFromElements(iciclegnark_bn254.BatchConvertFromFrGnark(gnarkScalars))
+
+	cfg := core.GetDefaultMSMConfig()
+	var p iciclewrapper_bn254.G2Projective
+	var out core.DeviceSlice
+	_, e := out.Malloc(p.Size(), p.Size())
+	if e != cr.CudaSuccess {
+		return nil, errors.New("Cannot allocate g2")
+	}
+	e = iciclewrapper_bn254.G2Msm(icicleScalars, gnarkPoints, &cfg, out)
+	if e != cr.CudaSuccess {
+		return nil, errors.New("Msm g2 failed")
+	}
+	outHost := make(core.HostSlice[iciclewrapper_bn254.G2Projective], 1)
+	outHost.CopyFromDevice(&out)
+	out.Free()
+	return iciclegnark_bn254.G2PointToGnarkAffine(&outHost[0]), nil
 }
