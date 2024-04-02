@@ -109,7 +109,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	genBits := pk.Domain.Generator.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
 	fmt.Printf("start init icicle domain \n")
-	//iciclewrapper_bn254.InitDomain(s, cfg.Ctx, true)
+	iciclewrapper_bn254.InitDomain(s, cfg.Ctx, true)
 	fmt.Printf("end init icicle domain \n")
 
 	return nil
