@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
@@ -59,9 +60,28 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	// opcy pk B to device
 	fmt.Printf("start copy pk B \n")
 	copyBDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.B, copyADone) // Make a function for points
+	go iciclegnark.CopyPointsToDevice(pk.G1.B, copyBDone) // Make a function for points
 	pk.G1Device.B = <-copyBDone
 	fmt.Printf("end copy pk B \n")
+
+	fmt.Printf("start copy pk K \n")
+	copyKDone := make(chan core.DeviceSlice, 1)
+	go iciclegnark.CopyPointsToDevice(pk.G1.K, copyKDone) // Make a function for points
+	pk.G1Device.K = <-copyKDone
+	fmt.Printf("end copy pk K \n")
+
+	fmt.Printf("start copy pk Z \n")
+	copyZDone := make(chan core.DeviceSlice, 1)
+	go iciclegnark.CopyPointsToDevice(pk.G1.Z, copyZDone) // Make a function for points
+	pk.G1Device.Z = <-copyZDone
+	fmt.Printf("end copy pk Z \n")
+
+	fmt.Printf("start copy pk G2 B \n")
+	copyG2BDone := make(chan core.DeviceSlice, 1)
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	pk.G2Device.B = <-copyG2BDone
+	fmt.Printf("end copy pk G2 B \n")
 
 	// ntt config
 	cfg := bn254.GetDefaultNttConfig()
