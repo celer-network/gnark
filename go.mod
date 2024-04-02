@@ -12,6 +12,7 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/icza/bitio v1.1.0
+	github.com/ingonyama-zk/icicle v1.9.1
 	github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240329204201-5a05ea507886
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.30.0
@@ -23,7 +24,6 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/ingonyama-zk/icicle v1.9.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
