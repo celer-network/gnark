@@ -49,9 +49,19 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	}
 	pk.deviceInfo = &deviceInfo{}
 
+	// copy pk A to device
+	fmt.Printf("start copy pk A \n")
 	copyADone := make(chan core.DeviceSlice, 1)
 	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	pk.G1Device.A = <-copyADone
+	fmt.Printf("end copy pk A \n")
+
+	// opcy pk B to device
+	fmt.Printf("start copy pk B \n")
+	copyBDone := make(chan core.DeviceSlice, 1)
+	go iciclegnark.CopyPointsToDevice(pk.G1.B, copyADone) // Make a function for points
+	pk.G1Device.B = <-copyBDone
+	fmt.Printf("end copy pk B \n")
 
 	// ntt config
 	cfg := bn254.GetDefaultNttConfig()
@@ -75,7 +85,9 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	// domain.Generator
 	genBits := pk.Domain.Generator.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
+	fmt.Printf("start init icicle domain \n")
 	bn254.InitDomain(s, cfg.Ctx, true)
+	fmt.Printf("end init icicle domain \n")
 
 	return nil
 }
