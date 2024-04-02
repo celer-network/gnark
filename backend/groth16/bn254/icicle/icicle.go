@@ -3,7 +3,13 @@
 package icicle_bn254
 
 import (
+	"errors"
 	"fmt"
+	"math/big"
+	"runtime"
+	"sync"
+	"time"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
@@ -22,12 +28,9 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	cr "github.com/ingonyama-zk/icicle/wrappers/golang/cuda_runtime"
 	iciclewrapper_bn254 "github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
 	iciclegnark_bn254 "github.com/ingonyama-zk/iciclegnark/curves/bn254"
-	"math/big"
-	"runtime"
-	"sync"
-	"time"
 )
 
 const HasIcicle = true
@@ -536,4 +539,25 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 
 	return nil
+}
+
+func MsmOnDevice(gnarkPoints []curve.G1Affine, gnarkScalars []fr.Element) (*curve.G1Affine, error) {
+	iciclePoints := iciclegnark_bn254.HostSliceFromPoints(gnarkPoints)
+	icicleScalars := iciclegnark_bn254.HostSliceFromScalars(gnarkScalars)
+
+	cfg := core.GetDefaultMSMConfig()
+	var p iciclewrapper_bn254.Projective
+	var out core.DeviceSlice
+	_, e := out.Malloc(p.Size(), p.Size())
+	if e != cr.CudaSuccess {
+		return nil, errors.New("cannot allocate")
+	}
+	e = iciclewrapper_bn254.Msm(icicleScalars, iciclePoints, &cfg, out)
+	if e != cr.CudaSuccess {
+		return nil, errors.New("msm failed")
+	}
+	outHost := make(core.HostSlice[iciclewrapper_bn254.Projective], 1)
+	outHost.CopyFromDevice(&out)
+	out.Free()
+	return iciclegnark_bn254.ProjectiveToGnarkAffine(&outHost[0]), nil
 }
