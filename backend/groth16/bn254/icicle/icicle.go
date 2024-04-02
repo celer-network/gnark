@@ -22,8 +22,8 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
-	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
+	iciclewrapper_bn254 "github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
+	iciclegnark_bn254 "github.com/ingonyama-zk/iciclegnark/curves/bn254"
 	"math/big"
 	"runtime"
 	"sync"
@@ -53,39 +53,39 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	// copy pk A to device
 	fmt.Printf("start copy pk A \n")
 	copyADone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
+	go iciclegnark_bn254.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
 	pk.G1Device.A = <-copyADone
 	fmt.Printf("end copy pk A \n")
 
 	// opcy pk B to device
 	fmt.Printf("start copy pk B \n")
 	copyBDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.B, copyBDone) // Make a function for points
+	go iciclegnark_bn254.CopyPointsToDevice(pk.G1.B, copyBDone) // Make a function for points
 	pk.G1Device.B = <-copyBDone
 	fmt.Printf("end copy pk B \n")
 
 	fmt.Printf("start copy pk K \n")
 	copyKDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.K, copyKDone) // Make a function for points
+	go iciclegnark_bn254.CopyPointsToDevice(pk.G1.K, copyKDone) // Make a function for points
 	pk.G1Device.K = <-copyKDone
 	fmt.Printf("end copy pk K \n")
 
 	fmt.Printf("start copy pk Z \n")
 	copyZDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.Z, copyZDone) // Make a function for points
+	go iciclegnark_bn254.CopyPointsToDevice(pk.G1.Z, copyZDone) // Make a function for points
 	pk.G1Device.Z = <-copyZDone
 	fmt.Printf("end copy pk Z \n")
 
 	fmt.Printf("start copy pk G2 B \n")
 	copyG2BDone := make(chan core.DeviceSlice, 1)
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
-	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	go iciclegnark_bn254.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone
 	fmt.Printf("end copy pk G2 B \n")
 
 	// ntt config
-	cfg := bn254.GetDefaultNttConfig()
-	var s bn254.ScalarField
+	cfg := iciclewrapper_bn254.GetDefaultNttConfig()
+	var s iciclewrapper_bn254.ScalarField
 
 	// set pk.Domain.CosetTable[1]
 	cosetTable, err := pk.Domain.CosetTable()
@@ -106,7 +106,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	genBits := pk.Domain.Generator.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
 	fmt.Printf("start init icicle domain \n")
-	bn254.InitDomain(s, cfg.Ctx, true)
+	//iciclewrapper_bn254.InitDomain(s, cfg.Ctx, true)
 	fmt.Printf("end init icicle domain \n")
 
 	return nil
@@ -265,7 +265,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		bs1InGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.B, wireValuesB)
+		bs1InGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.B, wireValuesB)
 		if gerr != nil {
 			chBs1Done <- gerr
 			close(chBs1Done)
@@ -293,7 +293,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		arInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.A, wireValuesA)
+		arInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.A, wireValuesA)
 		if gerr != nil {
 			chArDone <- gerr
 			close(chArDone)
@@ -324,7 +324,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		go func() {
 			_, kerr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
 
-			krs2InGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.Z, h[:sizeH])
+			krs2InGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.Z, h[:sizeH])
 			if gerr != nil {
 				chKrsDone <- gerr
 				return
@@ -355,7 +355,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// TODO
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		krsInGpu, gerr := iciclegnark.MsmOnDevice(pk.G1.K, _wireValues)
+		krsInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.K, _wireValues)
 		if gerr != nil {
 			chKrsDone <- gerr
 			return
@@ -416,7 +416,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return merr
 		}
 
-		bsInGpu, gerr := iciclegnark.G2MsmOnDevice(pk.G2.B, wireValuesB)
+		bsInGpu, gerr := iciclegnark_bn254.G2MsmOnDevice(pk.G2.B, wireValuesB)
 		if gerr != nil {
 			return gerr
 		}
