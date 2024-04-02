@@ -542,6 +542,7 @@ func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 }
 
 func MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curve.G1Affine, error) {
+	fmt.Println("MsmOnDevice with g1 on device")
 	icicleScalars := iciclegnark_bn254.HostSliceFromScalars(gnarkScalars)
 
 	cfg := core.GetDefaultMSMConfig()
@@ -562,6 +563,7 @@ func MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curv
 }
 
 func G2MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curve.G2Affine, error) {
+	fmt.Println("MsmOnDevice with g2 on device")
 	icicleScalars := core.HostSliceFromElements(iciclegnark_bn254.BatchConvertFromFrGnark(gnarkScalars))
 
 	cfg := core.GetDefaultMSMConfig()
