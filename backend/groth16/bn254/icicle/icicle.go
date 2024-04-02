@@ -3,7 +3,13 @@
 package icicle_bn254
 
 import (
+	"errors"
 	"fmt"
+	"math/big"
+	"runtime"
+	"sync"
+	"time"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
@@ -22,12 +28,9 @@ import (
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
 	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	cr "github.com/ingonyama-zk/icicle/wrappers/golang/cuda_runtime"
 	iciclewrapper_bn254 "github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
 	iciclegnark_bn254 "github.com/ingonyama-zk/iciclegnark/curves/bn254"
-	"math/big"
-	"runtime"
-	"sync"
-	"time"
 )
 
 const HasIcicle = true
@@ -265,7 +268,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		bs1InGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.B, wireValuesB)
+		bs1InGpu, gerr := MsmOnDevice(pk.G1Device.B, wireValuesB)
 		if gerr != nil {
 			chBs1Done <- gerr
 			close(chBs1Done)
@@ -293,7 +296,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return
 		}
 
-		arInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.A, wireValuesA)
+		arInGpu, gerr := MsmOnDevice(pk.G1Device.A, wireValuesA)
 		if gerr != nil {
 			chArDone <- gerr
 			close(chArDone)
@@ -324,7 +327,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		go func() {
 			_, kerr := krs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
 
-			krs2InGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.Z, h[:sizeH])
+			krs2InGpu, gerr := MsmOnDevice(pk.G1Device.Z, h[:sizeH])
 			if gerr != nil {
 				chKrsDone <- gerr
 				return
@@ -355,7 +358,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// TODO
 		// filter zero/infinity points since icicle doesn't handle them
 		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		krsInGpu, gerr := iciclegnark_bn254.MsmOnDevice(pk.G1.K, _wireValues)
+		krsInGpu, gerr := MsmOnDevice(pk.G1Device.K, _wireValues)
 		if gerr != nil {
 			chKrsDone <- gerr
 			return
@@ -416,7 +419,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return merr
 		}
 
-		bsInGpu, gerr := iciclegnark_bn254.G2MsmOnDevice(pk.G2.B, wireValuesB)
+		bsInGpu, gerr := G2MsmOnDevice(pk.G2Device.B, wireValuesB)
 		if gerr != nil {
 			return gerr
 		}
@@ -536,4 +539,46 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 
 	return nil
+}
+
+func MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curve.G1Affine, error) {
+	fmt.Println("MsmOnDevice with g1 on device")
+	icicleScalars := iciclegnark_bn254.HostSliceFromScalars(gnarkScalars)
+
+	cfg := core.GetDefaultMSMConfig()
+	var p iciclewrapper_bn254.Projective
+	var out core.DeviceSlice
+	_, e := out.Malloc(p.Size(), p.Size())
+	if e != cr.CudaSuccess {
+		return nil, errors.New("cannot allocate")
+	}
+	e = iciclewrapper_bn254.Msm(icicleScalars, gnarkPoints, &cfg, out)
+	if e != cr.CudaSuccess {
+		return nil, errors.New("msm failed")
+	}
+	outHost := make(core.HostSlice[iciclewrapper_bn254.Projective], 1)
+	outHost.CopyFromDevice(&out)
+	out.Free()
+	return iciclegnark_bn254.ProjectiveToGnarkAffine(&outHost[0]), nil
+}
+
+func G2MsmOnDevice(gnarkPoints core.DeviceSlice, gnarkScalars []fr.Element) (*curve.G2Affine, error) {
+	fmt.Println("MsmOnDevice with g2 on device")
+	icicleScalars := core.HostSliceFromElements(iciclegnark_bn254.BatchConvertFromFrGnark(gnarkScalars))
+
+	cfg := core.GetDefaultMSMConfig()
+	var p iciclewrapper_bn254.G2Projective
+	var out core.DeviceSlice
+	_, e := out.Malloc(p.Size(), p.Size())
+	if e != cr.CudaSuccess {
+		return nil, errors.New("Cannot allocate g2")
+	}
+	e = iciclewrapper_bn254.G2Msm(icicleScalars, gnarkPoints, &cfg, out)
+	if e != cr.CudaSuccess {
+		return nil, errors.New("Msm g2 failed")
+	}
+	outHost := make(core.HostSlice[iciclewrapper_bn254.G2Projective], 1)
+	outHost.CopyFromDevice(&out)
+	out.Free()
+	return iciclegnark_bn254.G2PointToGnarkAffine(&outHost[0]), nil
 }
