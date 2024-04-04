@@ -92,7 +92,7 @@ func getInnerCommitment(assert *test.Assert, field, outer *big.Int) (constraint.
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
 	assert.NoError(err)
-	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, regroth16.GetNativeProverOptions(outer, field))
+	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), regroth16.GetNativeProverOptions(outer, field))
 	assert.NoError(err)
 	innerPubWitness, err := innerWitness.Public()
 	assert.NoError(err)
