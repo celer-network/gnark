@@ -1,25 +1,24 @@
 package icicle_bw6761
 
 import (
-	"io"
-	"unsafe"
-
 	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	cs "github.com/consensys/gnark/constraint/bw6-761"
+	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	"io"
 )
 
 type deviceInfo struct {
 	G1Device struct {
-		A, B, K, Z unsafe.Pointer
+		A, B, K, Z core.DeviceSlice
 	}
 	DomainDevice struct {
-		Twiddles, TwiddlesInv     unsafe.Pointer
-		CosetTable, CosetTableInv unsafe.Pointer
+		Twiddles, TwiddlesInv     core.DeviceSlice
+		CosetTable, CosetTableInv core.DeviceSlice
 	}
 	G2Device struct {
-		B unsafe.Pointer
+		B core.DeviceSlice
 	}
-	DenDevice             unsafe.Pointer
+	DenDevice             core.DeviceSlice
 	InfinityPointIndicesK []int
 }
 
