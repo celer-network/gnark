@@ -4,7 +4,6 @@ package icicle_bn254
 
 import (
 	"fmt"
-	"github.com/rs/zerolog/log"
 	"math/big"
 	"sync"
 	"time"
@@ -49,7 +48,8 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	if pk.deviceInfo != nil {
 		return nil
 	}
-	log.Info().Msg("start setupDevicePointers")
+	lg := logger.Logger().With().Str("curve", "bn254").Str("acceleration", "icicle").Str("backend", "groth16").Logger()
+	lg.Info().Msg("start setupDevicePointers")
 	pk.deviceInfo = &deviceInfo{}
 
 	// ntt config
@@ -103,14 +103,15 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone
 
-	log.Info().Msg("end setupDevicePointers")
+	lg.Info().Msg("end setupDevicePointers")
 
 	return nil
 }
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
-	log.Info().Msg("start prove")
+	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -123,8 +124,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if err != nil {
 		return nil, err
 	}
-
-	logger := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
 
@@ -259,7 +258,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
 	gerr := bn254.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
-		fmt.Errorf("Error in MSM: ", gerr)
+		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
@@ -270,7 +269,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
-		fmt.Errorf("Error in MSM: ", gerr)
+		return nil, fmt.Errorf("error in MSM a: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
@@ -283,7 +282,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
-		fmt.Errorf("Error in MSM: ", gerr)
+		return nil, fmt.Errorf("error in MSM z: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 	h_device.FreeAsync(stream)
@@ -303,7 +302,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
 	gerr = bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
-		fmt.Errorf("Error in MSM: ", gerr)
+		return nil, fmt.Errorf("error in MSM k: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 	out.FreeAsync(stream)
@@ -327,7 +326,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
 	gerr = bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
 	if gerr != cuda_runtime.CudaSuccess {
-		fmt.Errorf("Error in MSM: ", gerr)
+		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
 	}
 	outHostG2.CopyFromDeviceAsync(&outG2, stream)
 	outG2.FreeAsync(stream)
@@ -342,7 +341,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	proof.Bs.FromJacobian(&Bs)
 
-	logger.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	lg.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
 	return proof, nil
 }
