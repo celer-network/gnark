@@ -1,6 +1,10 @@
 package testgpu
 
 import (
+	"math/big"
+	"os"
+	"testing"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
@@ -12,9 +16,6 @@ import (
 	regroth16 "github.com/consensys/gnark/std/recursion/groth16"
 	"github.com/consensys/gnark/test"
 	"github.com/rs/zerolog"
-	"math/big"
-	"os"
-	"testing"
 )
 
 func TestBn254Gpu(t *testing.T) {
