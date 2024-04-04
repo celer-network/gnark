@@ -25,6 +25,13 @@ func TestBn254Gpu(t *testing.T) {
 	getInnerCommitment(assert, ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
 }
 
+func TestBls12377Gpu(t *testing.T) {
+	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
+	assert := test.NewAssert(t)
+	getInner(assert, ecc.BLS12_377.ScalarField())
+	getInnerCommitment(assert, ecc.BLS12_377.ScalarField(), ecc.BW6_761.ScalarField())
+}
+
 type InnerCircuit struct {
 	P, Q frontend.Variable
 	N    frontend.Variable `gnark:",public"`
