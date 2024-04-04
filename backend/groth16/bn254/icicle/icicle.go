@@ -4,6 +4,7 @@ package icicle_bn254
 
 import (
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"math/big"
 	"sync"
 	"time"
@@ -48,6 +49,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	if pk.deviceInfo != nil {
 		return nil
 	}
+	log.Info().Msg("start setupDevicePointers")
 	pk.deviceInfo = &deviceInfo{}
 
 	// ntt config
@@ -101,12 +103,14 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	pk.G2Device.B = <-copyG2BDone
 
+	log.Info().Msg("end setupDevicePointers")
+
 	return nil
 }
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
-	fmt.Println("run icicle prove")
+	log.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -120,7 +124,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	logger := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
 
@@ -338,7 +342,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	proof.Bs.FromJacobian(&Bs)
 
-	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	logger.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
 	return proof, nil
 }
