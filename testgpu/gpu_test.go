@@ -180,5 +180,9 @@ func (c *OuterBN254Circuit) Define(api frontend.API) error {
 	if err != nil {
 		return fmt.Errorf("new verifier: %w", err)
 	}
+	err = verifier.AssertProofBrevis(c.VerifyingKey, c.Proof, c.InnerWitness)
+	if err != nil {
+		return err
+	}
 	return verifier.AssertProofBrevis(c.VerifyingKey, c.Proof, c.InnerWitness)
 }
