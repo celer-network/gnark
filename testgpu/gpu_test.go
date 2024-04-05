@@ -1,6 +1,8 @@
 package testgpu
 
 import (
+	"fmt"
+	"github.com/consensys/gnark/std/algebra/emulated/sw_bw6761"
 	"math/big"
 	"os"
 	"testing"
@@ -37,6 +39,40 @@ func TestBw6761Gpu(t *testing.T) {
 	assert := test.NewAssert(t)
 	getInner(assert, ecc.BW6_761.ScalarField())
 	getInnerCommitment(assert, ecc.BW6_761.ScalarField(), ecc.BN254.ScalarField())
+}
+
+func TestBn254VerifyBw6761(t *testing.T) {
+	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
+	assert := test.NewAssert(t)
+	ccs, vk, pubW, proof := getInnerCommitment(assert, ecc.BW6_761.ScalarField(), ecc.BN254.ScalarField())
+
+	circuit := &OuterBN254Circuit{
+		P:            3,
+		Q:            5,
+		N:            15,
+		Proof:        regroth16.PlaceholderProof[sw_bw6761.G1Affine, sw_bw6761.G2Affine](ccs),
+		VerifyingKey: regroth16.PlaceholderVerifyingKey[sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl](ccs),
+		InnerWitness: regroth16.PlaceholderWitness[sw_bw6761.ScalarField](ccs),
+	}
+
+	p, err := regroth16.ValueOfProof[sw_bw6761.G1Affine, sw_bw6761.G2Affine](proof)
+	assert.NoError(err)
+	v, err := regroth16.ValueOfVerifyingKey[sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl](vk)
+	assert.NoError(err)
+	w, err := regroth16.ValueOfWitness[sw_bw6761.ScalarField](pubW)
+	assert.NoError(err)
+
+	assigment := &OuterBN254Circuit{
+		P:            3,
+		Q:            5,
+		N:            15,
+		Proof:        p,
+		VerifyingKey: v,
+		InnerWitness: w,
+	}
+
+	err = test.IsSolved(circuit, assigment, ecc.BN254.ScalarField())
+	assert.NoError(err)
 }
 
 type InnerCircuit struct {
@@ -113,4 +149,23 @@ func getInnerCommitment(assert *test.Assert, field, outer *big.Int) (constraint.
 	err = groth16.Verify(innerProof, innerVK, innerPubWitness, regroth16.GetNativeVerifierOptions(outer, field))
 	assert.NoError(err)
 	return innerCcs, innerVK, innerPubWitness, innerProof
+}
+
+type OuterBN254Circuit struct {
+	P, Q frontend.Variable
+	N    frontend.Variable `gnark:",public"`
+
+	Proof        regroth16.Proof[sw_bw6761.G1Affine, sw_bw6761.G2Affine]
+	VerifyingKey regroth16.VerifyingKey[sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl]
+	InnerWitness regroth16.Witness[sw_bw6761.ScalarField]
+}
+
+func (c *OuterBN254Circuit) Define(api frontend.API) error {
+	res := api.Mul(c.P, c.Q)
+	api.AssertIsEqual(res, c.N)
+	verifier, err := regroth16.NewVerifier[sw_bw6761.ScalarField, sw_bw6761.G1Affine, sw_bw6761.G2Affine, sw_bw6761.GTEl](api)
+	if err != nil {
+		return fmt.Errorf("new verifier: %w", err)
+	}
+	return verifier.AssertProofBrevis(c.VerifyingKey, c.Proof, c.InnerWitness)
 }
