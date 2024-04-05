@@ -73,6 +73,19 @@ func TestBn254VerifyBw6761(t *testing.T) {
 
 	err = test.IsSolved(circuit, assigment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+
+	outerCcs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+	assert.NoError(err)
+	outerPK, outerVK, err := groth16.Setup(outerCcs)
+	assert.NoError(err)
+	outerWitness, err := frontend.NewWitness(assigment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+	outerProof, err := groth16.Prove(outerCcs, outerPK, outerWitness, backend.WithIcicleAcceleration())
+	assert.NoError(err)
+	outerPubWitness, err := outerWitness.Public()
+	assert.NoError(err)
+	err = groth16.Verify(outerProof, outerVK, outerPubWitness)
+	assert.NoError(err)
 }
 
 type InnerCircuit struct {
