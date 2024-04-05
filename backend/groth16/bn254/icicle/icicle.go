@@ -253,6 +253,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var out core.DeviceSlice
 	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
 
+	<-chWireValuesB
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
 	var wireValuesBdevice core.DeviceSlice
 	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
@@ -266,6 +267,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
+	<-chWireValuesA
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
