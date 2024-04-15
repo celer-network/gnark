@@ -284,7 +284,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
+	var cpuAr curve.G1Jac
+	_, err = cpuAr.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp ar: %v", err)
+	}
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu bs1: %v", cpuAr.Equal(&ar)))
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
