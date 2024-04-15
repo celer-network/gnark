@@ -375,7 +375,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outG2.FreeAsync(stream)
 	wireValuesBdevice.FreeAsync(stream)
 
+	var cpuBs curve.G2Jac
+	_, err = cpuBs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu G2 MultiExp Bs: %v", err)
+	}
 	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
+	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu Bs: %v", cpuBs.Equal(&Bs)))
 
 	deltaS.FromAffine(&pk.G2.Delta)
 	deltaS.ScalarMultiplication(&deltaS, &s)
