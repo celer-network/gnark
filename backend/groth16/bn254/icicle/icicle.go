@@ -4,7 +4,9 @@ package icicle_bn254
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
+	"runtime"
 	"sync"
 	"time"
 
@@ -111,6 +113,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
 	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	n := runtime.NumCPU()
 	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
@@ -263,7 +266,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
+	var cpuBs1 curve.G1Jac
+	_, err = cpuBs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp bs1: %v", err)
+	}
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg(fmt.Sprintf("gpu bs1 equal cpu bs1: %v", cpuBs1.Equal(&bs1)))
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
