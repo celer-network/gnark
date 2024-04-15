@@ -199,6 +199,17 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// H (witness reduction / FFT part)
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
 
+	// cpu calculate h
+	var h []fr.Element
+	chHDone := make(chan struct{}, 1)
+	go func() {
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		chHDone <- struct{}{}
+	}()
+
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB []fr.Element
@@ -296,6 +307,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	ar.AddMixed(&deltas[0])
 	proof.Ar.FromJacobian(&ar)
 
+	<-chHDone
+
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
@@ -324,7 +337,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHost.CopyFromDeviceAsync(&out, stream)
 	out.FreeAsync(stream)
 
+	var cpuKrs curve.G1Jac
+	_, err = cpuKrs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp krs: %v", err)
+	}
 	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs: %v", cpuKrs.Equal(&krs)))
 
 	krs.AddMixed(&deltas[2])
 	krs.AddAssign(&krs2)
