@@ -263,7 +263,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-	out.FreeAsync(stream)
+	wireValuesBdevice.FreeAsync(stream)
 
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	bs1.AddMixed(&pk.G1.Beta)
@@ -276,7 +276,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, fmt.Errorf("error in MSM a: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-	out.FreeAsync(stream)
 
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 
@@ -290,7 +289,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, fmt.Errorf("error in MSM z: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-	out.FreeAsync(stream)
 	h_device.FreeAsync(stream)
 
 	solution.A = nil
