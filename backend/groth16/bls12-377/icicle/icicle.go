@@ -194,8 +194,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
 	ctx.Stream = &stream
 
+	lg.Debug().Msg("start h_device")
+	time.Sleep(10 * time.Second)
 	// H (witness reduction / FFT part)
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
+
+	lg.Debug().Msg("end h_device")
+	time.Sleep(10 * time.Second)
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -256,6 +261,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesB
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
+	lg.Debug().Msg("start bs1")
+	time.Sleep(10 * time.Second)
 	gerr := bls12377.Msm(wireValuesBhost, pk.G1Device.B, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
@@ -270,6 +277,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesA
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
+	lg.Debug().Msg("start ar")
+	time.Sleep(10 * time.Second)
 	gerr = bls12377.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM a: %v", gerr)
@@ -285,6 +294,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	time.Sleep(8 * time.Second)
 
 	var krs, krs2, p1 curve.G1Jac
+	lg.Debug().Msg("start krs2")
+	time.Sleep(10 * time.Second)
 	gerr = bls12377.Msm(h_device, pk.G1Device.Z, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM z: %v", gerr)
