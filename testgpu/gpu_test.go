@@ -80,6 +80,9 @@ func TestBn254VerifyBw6761(t *testing.T) {
 	assert.NoError(err)
 	outerWitness, err := frontend.NewWitness(assigment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+	for i := 0; i < 2; i++ {
+		groth16.Prove(outerCcs, outerPK, outerWitness, backend.WithIcicleAcceleration())
+	}
 	outerProof, err := groth16.Prove(outerCcs, outerPK, outerWitness, backend.WithIcicleAcceleration())
 	assert.NoError(err)
 	outerPubWitness, err := outerWitness.Public()
