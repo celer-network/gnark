@@ -60,7 +60,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	genBits := gen.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
-	bn254.InitDomain(s, ctx, true)
+	bn254.InitDomain(s, ctx, false)
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
@@ -196,7 +196,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
-
 	// cpu calculate h
 	/*var h []fr.Element
 	chHDone := make(chan struct{}, 1)

@@ -4,13 +4,12 @@ package icicle_bls12377
 
 import (
 	"fmt"
-	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
-	"runtime"
 	"sync"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
@@ -99,10 +98,10 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1Device.Z = <-copyZDone
 
 	/*************************  Start G2 Device Setup  ***************************/
-	//pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
-	//copyG2BDone := make(chan core.DeviceSlice, 1)
-	//go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	//pk.G2Device.B = <-copyG2BDone
+	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	copyG2BDone := make(chan core.DeviceSlice, 1)
+	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	pk.G2Device.B = <-copyG2BDone
 
 	lg.Info().Msg("end setupDevicePointers")
 
@@ -112,6 +111,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	//n := runtime.NumCPU()
 	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
@@ -194,13 +194,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
 	ctx.Stream = &stream
 
-	lg.Debug().Msg("start h_device")
-	time.Sleep(10 * time.Second)
 	// H (witness reduction / FFT part)
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
-
-	lg.Debug().Msg("end h_device")
-	time.Sleep(10 * time.Second)
+	// cpu calculate h
+	/*var h []fr.Element
+	chHDone := make(chan struct{}, 1)
+	go func() {
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		lg.Debug().Msg(fmt.Sprintf("h len: %d", len(h)))
+		chHDone <- struct{}{}
+	}()*/
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -261,41 +267,47 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesB
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
-	lg.Debug().Msg("start bs1")
-	time.Sleep(10 * time.Second)
-	gerr := bls12377.Msm(wireValuesBhost, pk.G1Device.B, &cfg, out)
+	var wireValuesBdevice core.DeviceSlice
+	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
+	gerr := bls12377.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+
+	/*var cpuBs1 curve.G1Jac
+	_, err = cpuBs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp bs1: %v", err)
+	}*/
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg("bs1 done")
+	//lg.Debug().Msg(fmt.Sprintf("gpu bs1 equal cpu bs1: %v", cpuBs1.Equal(&bs1)))
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
-	time.Sleep(8 * time.Second)
-
 	<-chWireValuesA
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
-	lg.Debug().Msg("start ar")
-	time.Sleep(10 * time.Second)
 	gerr = bls12377.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM a: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+
+	/*var cpuAr curve.G1Jac
+	_, err = cpuAr.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp ar: %v", err)
+	}*/
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg("ar done")
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu bs1: %v", cpuAr.Equal(&ar)))
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
 	proof.Ar.FromJacobian(&ar)
 
-	time.Sleep(8 * time.Second)
+	//<-chHDone
 
 	var krs, krs2, p1 curve.G1Jac
-	lg.Debug().Msg("start krs2")
-	time.Sleep(10 * time.Second)
 	gerr = bls12377.Msm(h_device, pk.G1Device.Z, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM z: %v", gerr)
@@ -307,10 +319,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution.B = nil
 	solution.C = nil
 
+	/*var cpuKrs2 curve.G1Jac
+	sizeH := int(pk.Domain.Cardinality - 1)
+	_, err = cpuKrs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp cpuKrs2: %v", err)
+	}*/
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg("krs2 done")
-
-	time.Sleep(8 * time.Second)
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
 
 	// filter the wire values if needed
 	// TODO Perf @Tabaie worst memory allocation offender
@@ -326,8 +342,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHost.CopyFromDeviceAsync(&out, stream)
 	out.FreeAsync(stream)
 
+	/*var cpuKrs curve.G1Jac
+	_, err = cpuKrs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp krs: %v", err)
+	}*/
 	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg("krs done")
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs: %v", cpuKrs.Equal(&krs)))
 
 	krs.AddMixed(&deltas[2])
 	krs.AddAssign(&krs2)
@@ -338,32 +359,34 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	proof.Krs.FromJacobian(&krs)
 
-	n := runtime.NumCPU()
-	computeBS2 := func() error {
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
+	// Bs2 (1 multi exp G2 - size = len(wires))
+	var Bs, deltaS curve.G2Jac
 
-		nbTasks := n
-		if nbTasks <= 16 {
-			// if we don't have a lot of CPUs, this may artificially split the MSM
-			nbTasks *= 2
-		}
-		<-chWireValuesB
-		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
-			return err
-		}
-
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
-
-		proof.Bs.FromJacobian(&Bs)
-		return nil
+	outHostG2 := make(core.HostSlice[bls12377.G2Projective], 1)
+	var outG2 core.DeviceSlice
+	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
+	gerr = bls12377.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
+	if gerr != cuda_runtime.CudaSuccess {
+		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
 	}
-	if err = computeBS2(); err != nil {
-		return nil, fmt.Errorf("cal bs2 fail: %v", err)
-	}
+	outHostG2.CopyFromDeviceAsync(&outG2, stream)
+	outG2.FreeAsync(stream)
+	wireValuesBdevice.FreeAsync(stream)
+
+	/*var cpuBs curve.G2Jac
+	_, err = cpuBs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu G2 MultiExp Bs: %v", err)
+	}*/
+	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu Bs: %v", cpuBs.Equal(&Bs)))
+
+	deltaS.FromAffine(&pk.G2.Delta)
+	deltaS.ScalarMultiplication(&deltaS, &s)
+	Bs.AddAssign(&deltaS)
+	Bs.AddMixed(&pk.G2.Beta)
+
+	proof.Bs.FromJacobian(&Bs)
 
 	lg.Debug().Dur("took", time.Since(start)).Msg("prover done")
 

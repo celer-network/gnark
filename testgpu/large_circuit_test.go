@@ -19,11 +19,44 @@ type LargeCircuitCommitment struct {
 	N    frontend.Variable `gnark:",public"`
 }
 
-func TestLargeCircuitInGpu(t *testing.T) {
+func TestLargeCircuitInGpuOnBn254(t *testing.T) {
 	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
 	assert := test.NewAssert(t)
 
 	field := ecc.BN254.ScalarField()
+	var p, q [TEST_SIZE]frontend.Variable
+	for i := 0; i < TEST_SIZE; i++ {
+		p[i] = 3
+		q[i] = 5
+	}
+	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &LargeCircuitCommitment{
+		P: p,
+		Q: q,
+	})
+	assert.NoError(err)
+	innerPK, innerVK, err := groth16.Setup(innerCcs)
+	assert.NoError(err)
+	// inner proof
+	innerAssignment := &LargeCircuitCommitment{
+		P: p,
+		Q: q,
+		N: 15,
+	}
+	innerWitness, err := frontend.NewWitness(innerAssignment, field)
+	assert.NoError(err)
+	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness)
+	assert.NoError(err)
+	innerPubWitness, err := innerWitness.Public()
+	assert.NoError(err)
+	err = groth16.Verify(innerProof, innerVK, innerPubWitness)
+	assert.NoError(err)
+}
+
+func TestLargeCircuitInGpuOnBls12377(t *testing.T) {
+	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
+	assert := test.NewAssert(t)
+
+	field := ecc.BLS12_377.ScalarField()
 	var p, q [TEST_SIZE]frontend.Variable
 	for i := 0; i < TEST_SIZE; i++ {
 		p[i] = 3
