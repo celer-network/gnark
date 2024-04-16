@@ -59,7 +59,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	var s bn254.ScalarField
 
 	// domain.Generator
-	gen, _ := fft.Generator(4 * pk.Domain.Cardinality)
+	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	genBits := gen.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
 	bn254.InitDomain(s, ctx, true)
