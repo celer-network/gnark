@@ -295,13 +295,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
-	var cpuAr curve.G1Jac
+	/*var cpuAr curve.G1Jac
 	_, err = cpuAr.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2})
 	if err != nil {
 		return nil, fmt.Errorf("error in cpu MultiExp ar: %v", err)
-	}
+	}*/
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu bs1: %v", cpuAr.Equal(&ar)))
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu bs1: %v", cpuAr.Equal(&ar)))
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
@@ -375,13 +375,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outG2.FreeAsync(stream)
 	wireValuesBdevice.FreeAsync(stream)
 
-	var cpuBs curve.G2Jac
+	/*var cpuBs curve.G2Jac
 	_, err = cpuBs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n})
 	if err != nil {
 		return nil, fmt.Errorf("error in cpu G2 MultiExp Bs: %v", err)
-	}
+	}*/
 	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
-	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu Bs: %v", cpuBs.Equal(&Bs)))
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu Bs: %v", cpuBs.Equal(&Bs)))
 
 	deltaS.FromAffine(&pk.G2.Delta)
 	deltaS.ScalarMultiplication(&deltaS, &s)
