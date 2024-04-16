@@ -92,7 +92,7 @@ func ReadCcs(filename string, ccs constraint.ConstraintSystem) error {
 }
 
 func LoadOrGenPkVkForTest(ccs constraint.ConstraintSystem, curveID ecc.ID, name string) (groth16.ProvingKey, groth16.VerifyingKey) {
-	fmt.Printf("Start to setup pk")
+	fmt.Printf("Start to setup pk \n")
 	var err error
 	pkFileName := fmt.Sprintf("%s.pk", name)
 	vkFileName := fmt.Sprintf("%s.vk", name)
@@ -101,7 +101,7 @@ func LoadOrGenPkVkForTest(ccs constraint.ConstraintSystem, curveID ecc.ID, name 
 	err1 := ReadProvingKey(pkFileName, pk)
 	err2 := ReadVerifyingKey(vkFileName, vk)
 	if err1 != nil || err2 != nil {
-		fmt.Printf("Failed to read pk and vk, and try create, %v, %v", err1, err2)
+		fmt.Printf("Failed to read pk and vk, and try create, %v, %v \n", err1, err2)
 		pk, vk, err = groth16.Setup(ccs)
 		if err != nil {
 			fmt.Errorf("e: %v", err)
@@ -117,7 +117,7 @@ func LoadOrGenCcsBN254ForTest(filename string, circuit frontend.Circuit) *cs_254
 	loadCcs := new(cs_254.R1CS)
 	err := ReadCcs(filename, loadCcs)
 	if err == nil {
-		fmt.Printf("load 254 ccs success: %s", filename)
+		fmt.Printf("load 254 ccs success: %s \n", filename)
 		return loadCcs
 	}
 	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)

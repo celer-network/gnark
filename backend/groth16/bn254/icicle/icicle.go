@@ -492,7 +492,6 @@ func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runt
 	den_host := iciclegnark.HostSliceFromScalars(den_repeated)
 
 	vcfg := core.DefaultVecOpsConfig()
-	cfg.IsAsync = true
 	vcfg.Ctx.Stream = &stream
 
 	// h = ifft_coset(ca o cb - cc)
