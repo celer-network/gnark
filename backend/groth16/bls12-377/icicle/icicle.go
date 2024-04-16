@@ -4,12 +4,13 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
+	"runtime"
 	"sync"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
@@ -98,10 +99,10 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1Device.Z = <-copyZDone
 
 	/*************************  Start G2 Device Setup  ***************************/
-	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
-	copyG2BDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	pk.G2Device.B = <-copyG2BDone
+	//pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
+	//copyG2BDone := make(chan core.DeviceSlice, 1)
+	//go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	//pk.G2Device.B = <-copyG2BDone
 
 	lg.Info().Msg("end setupDevicePointers")
 
@@ -320,28 +321,32 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	proof.Krs.FromJacobian(&krs)
 
-	// Bs2 (1 multi exp G2 - size = len(wires))
-	var Bs, deltaS curve.G2Jac
+	n := runtime.NumCPU()
+	computeBS2 := func() error {
+		// Bs2 (1 multi exp G2 - size = len(wires))
+		var Bs, deltaS curve.G2Jac
 
-	outHostG2 := make(core.HostSlice[bls12377.G2Projective], 1)
-	var outG2 core.DeviceSlice
-	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
-	gerr = bls12377.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
+		nbTasks := n
+		if nbTasks <= 16 {
+			// if we don't have a lot of CPUs, this may artificially split the MSM
+			nbTasks *= 2
+		}
+		<-chWireValuesB
+		if _, err := Bs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: nbTasks}); err != nil {
+			return err
+		}
+
+		deltaS.FromAffine(&pk.G2.Delta)
+		deltaS.ScalarMultiplication(&deltaS, &s)
+		Bs.AddAssign(&deltaS)
+		Bs.AddMixed(&pk.G2.Beta)
+
+		proof.Bs.FromJacobian(&Bs)
+		return nil
 	}
-	outHostG2.CopyFromDeviceAsync(&outG2, stream)
-	outG2.FreeAsync(stream)
-	wireValuesBdevice.FreeAsync(stream)
-
-	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
-
-	deltaS.FromAffine(&pk.G2.Delta)
-	deltaS.ScalarMultiplication(&deltaS, &s)
-	Bs.AddAssign(&deltaS)
-	Bs.AddMixed(&pk.G2.Beta)
-
-	proof.Bs.FromJacobian(&Bs)
+	if err = computeBS2(); err != nil {
+		return nil, fmt.Errorf("cal bs2 fail: %v", err)
+	}
 
 	lg.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
