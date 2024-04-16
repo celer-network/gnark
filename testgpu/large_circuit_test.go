@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const TEST_SIZE = 190 * 10000
+const TEST_SIZE = 950 * 10000
 
 type LargeCircuitCommitment struct {
 	P, Q [TEST_SIZE]frontend.Variable
