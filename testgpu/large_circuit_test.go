@@ -12,8 +12,10 @@ import (
 	"testing"
 )
 
+const TEST_SIZE = 2
+
 type LargeCircuitCommitment struct {
-	P, Q frontend.Variable
+	P, Q [TEST_SIZE]frontend.Variable
 	N    frontend.Variable `gnark:",public"`
 }
 
@@ -28,10 +30,13 @@ func TestLargeCircuitInGpu(t *testing.T) {
 	innerPK, innerVK, err := groth16.Setup(innerCcs)
 	assert.NoError(err)
 
+	var p, q [TEST_SIZE]frontend.Variable
+	for i := 0; i < TEST_SIZE; i++ {
+		p[i] = 3
+		q[i] = 5
+	}
 	// inner proof
 	innerAssignment := &LargeCircuitCommitment{
-		P: 3,
-		Q: 5,
 		N: 15,
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
@@ -45,10 +50,12 @@ func TestLargeCircuitInGpu(t *testing.T) {
 }
 
 func (c *LargeCircuitCommitment) Define(api frontend.API) error {
-	res := api.Mul(c.P, c.Q)
-	api.AssertIsEqual(res, c.N)
+	for i := 0; i < TEST_SIZE; i++ {
+		res := api.Mul(c.P[i], c.Q[i])
+		api.AssertIsEqual(res, c.N)
+	}
 
-	commitment, err := api.Compiler().(frontend.Committer).Commit(c.P, c.Q, c.N)
+	commitment, err := api.Compiler().(frontend.Committer).Commit(c.P[0], c.Q[0], c.N)
 	if err != nil {
 		return err
 	}
