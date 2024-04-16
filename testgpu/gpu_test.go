@@ -15,10 +15,127 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/logger"
+	cs_254 "github.com/consensys/gnark/constraint/bn254"
 	regroth16 "github.com/consensys/gnark/std/recursion/groth16"
 	"github.com/consensys/gnark/test"
 	"github.com/rs/zerolog"
 )
+
+func ReadProvingKey(filename string, pk groth16.ProvingKey) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = pk.UnsafeReadFrom(f)
+	return err
+}
+
+func WriteProvingKey(pk groth16.ProvingKey, filename string) {
+	f, err := os.Create(filename)
+	if err != nil {
+		fmt.Errorf("pk writing open failed... ")
+	}
+	_, err = pk.WriteTo(f)
+	if err != nil {
+		fmt.Errorf("pk writing failed... ")
+	}
+}
+
+func ReadVerifyingKey(filename string, vk groth16.VerifyingKey) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = vk.UnsafeReadFrom(f)
+	return err
+}
+
+func WriteVerifyingKey(vk groth16.VerifyingKey, filename string) {
+	f, err := os.Create(filename)
+	if err != nil {
+		fmt.Errorf("vk writing failed... ")
+	}
+
+	_, err = vk.WriteTo(f)
+	if err != nil {
+		fmt.Errorf("vk writing failed... ")
+	}
+}
+
+func WriteCcs(ccs constraint.ConstraintSystem, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = ccs.WriteTo(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ReadCcs(filename string, ccs constraint.ConstraintSystem) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = ccs.ReadFrom(f)
+	return err
+}
+
+func LoadOrGenPkVkForTest(ccs constraint.ConstraintSystem, curveID ecc.ID, name string) (groth16.ProvingKey, groth16.VerifyingKey) {
+	fmt.Printf("Start to setup pk")
+	var err error
+	pkFileName := fmt.Sprintf("%s.pk", name)
+	vkFileName := fmt.Sprintf("%s.vk", name)
+	var pk = groth16.NewProvingKey(curveID)
+	var vk = groth16.NewVerifyingKey(curveID)
+	err1 := ReadProvingKey(pkFileName, pk)
+	err2 := ReadVerifyingKey(vkFileName, vk)
+	if err1 != nil || err2 != nil {
+		fmt.Printf("Failed to read pk and vk, and try create, %v, %v", err1, err2)
+		pk, vk, err = groth16.Setup(ccs)
+		if err != nil {
+			fmt.Errorf("e: %v", err)
+		}
+		WriteProvingKey(pk, pkFileName)
+		WriteVerifyingKey(vk, vkFileName)
+	}
+	return pk, vk
+}
+
+func LoadOrGenCcsBN254ForTest(filename string, circuit frontend.Circuit) *cs_254.R1CS {
+	filename = fmt.Sprintf("%s.ccs", filename)
+	loadCcs := new(cs_254.R1CS)
+	err := ReadCcs(filename, loadCcs)
+	if err == nil {
+		fmt.Printf("load 254 ccs success: %s", filename)
+		return loadCcs
+	}
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+	if err != nil {
+		fmt.Errorf("e: %v", err)
+	}
+
+	err = WriteCcs(ccs, filename)
+	if err != nil {
+		fmt.Errorf("e: %v", err)
+	}
+
+	err = ReadCcs(filename, loadCcs)
+	if err != nil {
+		fmt.Errorf("e: %v", err)
+	}
+	return loadCcs
+}
 
 func TestBn254Gpu(t *testing.T) {
 	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
@@ -74,10 +191,10 @@ func TestBn254VerifyBw6761(t *testing.T) {
 	err = test.IsSolved(circuit, assigment, ecc.BN254.ScalarField())
 	assert.NoError(err)
 
-	outerCcs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
-	assert.NoError(err)
-	outerPK, outerVK, err := groth16.Setup(outerCcs)
-	assert.NoError(err)
+	fileName := "outer_circuit"
+
+	outerCcs := LoadOrGenCcsBN254ForTest(fileName, circuit)
+	outerPK, outerVK := LoadOrGenPkVkForTest(outerCcs, ecc.BN254, fileName)
 	outerWitness, err := frontend.NewWitness(assigment, ecc.BN254.ScalarField())
 	assert.NoError(err)
 	outerProof, err := groth16.Prove(outerCcs, outerPK, outerWitness, backend.WithIcicleAcceleration())
