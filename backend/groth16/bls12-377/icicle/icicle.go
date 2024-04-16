@@ -266,6 +266,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
+	time.Sleep(8 * time.Second)
+
 	<-chWireValuesA
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bls12377.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
@@ -279,6 +281,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
 	proof.Ar.FromJacobian(&ar)
+
+	time.Sleep(8 * time.Second)
 
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bls12377.Msm(h_device, pk.G1Device.Z, &cfg, out)
@@ -294,6 +298,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	lg.Debug().Msg("krs2 done")
+
+	time.Sleep(8 * time.Second)
 
 	// filter the wire values if needed
 	// TODO Perf @Tabaie worst memory allocation offender
