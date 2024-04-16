@@ -57,10 +57,10 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	var s bls12377.ScalarField
 
 	// domain.Generator
-	gen, _ := fft.Generator(4 * pk.Domain.Cardinality)
+	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	genBits := gen.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
-	bls12377.InitDomain(s, ctx, true)
+	bls12377.InitDomain(s, ctx, false)
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
@@ -111,6 +111,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	//n := runtime.NumCPU()
 	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
@@ -195,6 +196,17 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	// H (witness reduction / FFT part)
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
+	// cpu calculate h
+	/*var h []fr.Element
+	chHDone := make(chan struct{}, 1)
+	go func() {
+		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		lg.Debug().Msg(fmt.Sprintf("h len: %d", len(h)))
+		chHDone <- struct{}{}
+	}()*/
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -263,7 +275,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
+	/*var cpuBs1 curve.G1Jac
+	_, err = cpuBs1.MultiExp(pk.G1.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp bs1: %v", err)
+	}*/
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu bs1 equal cpu bs1: %v", cpuBs1.Equal(&bs1)))
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
@@ -275,11 +293,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 
+	/*var cpuAr curve.G1Jac
+	_, err = cpuAr.MultiExp(pk.G1.A, wireValuesA, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp ar: %v", err)
+	}*/
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu bs1: %v", cpuAr.Equal(&ar)))
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
 	proof.Ar.FromJacobian(&ar)
+
+	//<-chHDone
 
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bls12377.Msm(h_device, pk.G1Device.Z, &cfg, out)
@@ -293,7 +319,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution.B = nil
 	solution.C = nil
 
+	/*var cpuKrs2 curve.G1Jac
+	sizeH := int(pk.Domain.Cardinality - 1)
+	_, err = cpuKrs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp cpuKrs2: %v", err)
+	}*/
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
 
 	// filter the wire values if needed
 	// TODO Perf @Tabaie worst memory allocation offender
@@ -309,7 +342,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHost.CopyFromDeviceAsync(&out, stream)
 	out.FreeAsync(stream)
 
+	/*var cpuKrs curve.G1Jac
+	_, err = cpuKrs.MultiExp(pk.G1.K, _wireValues, ecc.MultiExpConfig{NbTasks: n / 2})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu MultiExp krs: %v", err)
+	}*/
 	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs: %v", cpuKrs.Equal(&krs)))
 
 	krs.AddMixed(&deltas[2])
 	krs.AddAssign(&krs2)
@@ -334,7 +373,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outG2.FreeAsync(stream)
 	wireValuesBdevice.FreeAsync(stream)
 
+	/*var cpuBs curve.G2Jac
+	_, err = cpuBs.MultiExp(pk.G2.B, wireValuesB, ecc.MultiExpConfig{NbTasks: n})
+	if err != nil {
+		return nil, fmt.Errorf("error in cpu G2 MultiExp Bs: %v", err)
+	}*/
 	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu Bs: %v", cpuBs.Equal(&Bs)))
 
 	deltaS.FromAffine(&pk.G2.Delta)
 	deltaS.ScalarMultiplication(&deltaS, &s)
