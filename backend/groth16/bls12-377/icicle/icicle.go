@@ -61,7 +61,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	genBits := gen.Bits()
 	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
-	bls12377.InitDomain(s, ctx, true)
+	bls12377.InitDomain(s, ctx, false)
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
