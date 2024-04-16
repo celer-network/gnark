@@ -24,17 +24,18 @@ func TestLargeCircuitInGpu(t *testing.T) {
 	assert := test.NewAssert(t)
 
 	field := ecc.BN254.ScalarField()
-
-	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &LargeCircuitCommitment{})
-	assert.NoError(err)
-	innerPK, innerVK, err := groth16.Setup(innerCcs)
-	assert.NoError(err)
-
 	var p, q [TEST_SIZE]frontend.Variable
 	for i := 0; i < TEST_SIZE; i++ {
 		p[i] = 3
 		q[i] = 5
 	}
+	innerCcs, err := frontend.Compile(field, r1cs.NewBuilder, &LargeCircuitCommitment{
+		P: p,
+		Q: q,
+	})
+	assert.NoError(err)
+	innerPK, innerVK, err := groth16.Setup(innerCcs)
+	assert.NoError(err)
 	// inner proof
 	innerAssignment := &LargeCircuitCommitment{
 		N: 15,
