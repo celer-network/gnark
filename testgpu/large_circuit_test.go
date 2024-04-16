@@ -38,6 +38,8 @@ func TestLargeCircuitInGpu(t *testing.T) {
 	assert.NoError(err)
 	// inner proof
 	innerAssignment := &LargeCircuitCommitment{
+		P: p,
+		Q: q,
 		N: 15,
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
