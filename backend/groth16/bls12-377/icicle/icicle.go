@@ -256,16 +256,13 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesB
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
-	var wireValuesBdevice core.DeviceSlice
-	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
-	gerr := bls12377.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
+	gerr := bls12377.Msm(wireValuesBhost, pk.G1Device.B, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-	wireValuesBdevice.FreeAsync(stream)
-
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg("bs1 done")
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
@@ -276,8 +273,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, fmt.Errorf("error in MSM a: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg("ar done")
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
@@ -296,6 +293,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution.C = nil
 
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg("krs2 done")
 
 	// filter the wire values if needed
 	// TODO Perf @Tabaie worst memory allocation offender
@@ -312,6 +310,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	out.FreeAsync(stream)
 
 	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	lg.Debug().Msg("krs done")
 
 	krs.AddMixed(&deltas[2])
 	krs.AddAssign(&krs2)
