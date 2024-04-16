@@ -4,9 +4,7 @@ package icicle_bn254
 
 import (
 	"fmt"
-	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
-	"runtime"
 	"sync"
 	"time"
 
@@ -113,7 +111,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
 	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
-	n := runtime.NumCPU()
+	//n := runtime.NumCPU()
 	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
@@ -207,6 +205,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
+		lg.Debug().Msg(fmt.Sprintf("h len: %d", len(h)))
 		chHDone <- struct{}{}
 	}()
 
@@ -321,14 +320,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	solution.B = nil
 	solution.C = nil
 
-	var cpuKrs2 curve.G1Jac
+	/*var cpuKrs2 curve.G1Jac
 	sizeH := int(pk.Domain.Cardinality - 1)
 	_, err = cpuKrs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: n / 2})
 	if err != nil {
 		return nil, fmt.Errorf("error in cpu MultiExp cpuKrs2: %v", err)
-	}
+	}*/
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
+	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
 
 	// filter the wire values if needed
 	// TODO Perf @Tabaie worst memory allocation offender
