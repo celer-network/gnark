@@ -328,7 +328,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-arDone
 
-	arDone2 := make(chan struct{}, 1)
+	/*arDone2 := make(chan struct{}, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		cfg_1 := bn254.GetDefaultMSMConfig()
 		stream_1, _ := cuda_runtime.CreateStream()
@@ -356,9 +356,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		lg.Debug().Msg(fmt.Sprintf("res2 proof.Ar: %+v", proof.Ar))
 		close(arDone2)
 	})
-	<-arDone2
+	<-arDone2*/
 
-	lg.Debug().Msg(fmt.Sprintf("res2 equal: %v", proof.Ar.Equal(&res2)))
+	//lg.Debug().Msg(fmt.Sprintf("res2 equal: %v", proof.Ar.Equal(&res2)))
 	proof.Ar = res2
 
 	/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
