@@ -350,6 +350,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
+		lg.Debug().Msg(fmt.Sprintf("ar2: %+v", proof.Ar))
 		close(arDone2)
 	})
 	<-arDone2
@@ -434,6 +435,7 @@ func CalAr(wireValuesA []fr.Element, deviceA *core.DeviceSlice, alpha, deltas0 *
 	}
 	outHost_1.CopyFromDeviceAsync(&out_1, stream_1)
 	ar := *iciclegnark.G1ProjectivePointToGnarkJac(&outHost_1[0])
+	lg.Debug().Msg(fmt.Sprintf("ar1: %+v", ar))
 	ar.AddMixed(alpha)
 	ar.AddMixed(deltas0)
 	res.FromJacobian(&ar)
