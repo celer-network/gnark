@@ -297,6 +297,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
 	var outG2 core.DeviceSlice
 	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
+
+	lg.Debug().Msg(fmt.Sprintf("pk.G2Device.B: %d", pk.G2Device.B.GetDeviceId()))
+
 	gerr = bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
