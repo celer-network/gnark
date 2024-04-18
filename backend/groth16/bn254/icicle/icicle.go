@@ -280,16 +280,24 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chWireValuesB
 	bs1Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
-		var calArErr error
-		bs1, calArErr = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
-		bs1Done <- calArErr
+		var calBs1Err error
+		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
+		bs1Done <- calBs1Err
 	})
 	<-bs1Done
 
-	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
+	BsDone := make(chan error, 1)
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		var Bs curve.G2Jac
+		var calBsErr error
+		Bs, calBsErr = CalG2Bs(wireValuesB, pk.G2Device.B, &pk.G2.Delta, &pk.G2.Beta, s)
+		proof.Bs.FromJacobian(&Bs)
+		BsDone <- calBsErr
+	})
+	<-BsDone
 
 	// Bs2 (1 multi exp G2 - size = len(wires))
-	var Bs, deltaS curve.G2Jac
+	/*var Bs2, deltaS curve.G2Jac
 
 	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
 	var outG2 core.DeviceSlice
@@ -308,7 +316,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	deltaS.ScalarMultiplication(&deltaS, &s)
 	Bs.AddAssign(&deltaS)
 	Bs.AddMixed(&pk.G2.Beta)
-	proof.Bs.FromJacobian(&Bs)
+	proof.Bs.FromJacobian(&Bs)*/
 
 	<-chWireValuesA
 	arDone := make(chan error, 1)
@@ -321,7 +329,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-arDone
 
 	var krs, krs2, p1 curve.G1Jac
-	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
+	gerr := bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM z: %v", gerr)
 	}
@@ -408,6 +416,37 @@ func CalBs1(wireValuesB []fr.Element, deviceB core.DeviceSlice, beta, deltas1 *c
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	bs1.AddMixed(beta)
 	bs1.AddMixed(deltas1)
+	return
+}
+
+func CalG2Bs(wireValuesB []fr.Element, deviceG2B core.DeviceSlice, delta, beta *curve.G2Affine, s big.Int) (Bs curve.G2Jac, err error) {
+	var deltaS curve.G2Jac
+	cfg := bn254.GetDefaultMSMConfig()
+	stream, cudaErr := cuda_runtime.CreateStream()
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G2Jac{}, fmt.Errorf("create g2 bs stream fail: %d", cudaErr)
+	}
+	cfg.Ctx.Stream = &stream
+	cfg.IsAsync = true
+
+	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
+	var outG2 core.DeviceSlice
+	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
+
+	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
+	cudaErr = bn254.G2Msm(wireValuesBhost, deviceG2B, &cfg, outG2)
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G2Jac{}, fmt.Errorf("g2 Bs msm fail: %d", cudaErr)
+	}
+	outHostG2.CopyFromDeviceAsync(&outG2, stream)
+	outG2.FreeAsync(stream)
+
+	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
+
+	deltaS.FromAffine(delta)
+	deltaS.ScalarMultiplication(&deltaS, &s)
+	Bs.AddAssign(&deltaS)
+	Bs.AddMixed(beta)
 	return
 }
 
