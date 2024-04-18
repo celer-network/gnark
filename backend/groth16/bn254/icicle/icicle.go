@@ -426,7 +426,7 @@ func CalAr(wireValuesA []fr.Element, deviceA *core.DeviceSlice, alpha, deltas0 *
 	out_1.MallocAsync(outHost_1.SizeOfElement(), outHost_1.SizeOfElement(), stream_1)
 
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
-	gerrB = bn254.Msm(wireValuesAhost, deviceA, &cfg_1, out_1)
+	gerrB = bn254.Msm(wireValuesAhost, *deviceA, &cfg_1, out_1)
 	if gerrB != cuda_runtime.CudaSuccess {
 		lg.Debug().Msg(fmt.Sprintf("error in MSM b: %v", gerrB))
 	} else {
