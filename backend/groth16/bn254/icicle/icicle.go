@@ -284,13 +284,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	bs1.AddMixed(&pk.G1.Beta)
 	bs1.AddMixed(&deltas[1])
 
 	// Bs2 (1 multi exp G2 - size = len(wires))
 	var Bs, deltaS curve.G2Jac
+
+	cr_device_id, _ := cuda_runtime.GetDevice()
+	lg.Debug().Msg(fmt.Sprintf("cr_device_id: %d", cr_device_id))
 
 	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
 	var outG2 core.DeviceSlice
