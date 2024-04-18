@@ -328,7 +328,35 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	cuda_runtime.SetDevice(0)*/
 
-	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
+	arDone := make(chan struct{}, 1)
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		cfg_1 := bn254.GetDefaultMSMConfig()
+		stream_1, _ := cuda_runtime.CreateStream()
+		lg.Debug().Msg(fmt.Sprintf("cfg_1 in device: %d", cfg_1.Ctx.GetDeviceId()))
+		cfg_1.Ctx.Stream = &stream_1
+		cfg_1.IsAsync = true
+
+		outHost_1 := make(core.HostSlice[bn254.Projective], 1)
+		var out_1 core.DeviceSlice
+		out_1.MallocAsync(outHost_1.SizeOfElement(), outHost_1.SizeOfElement(), stream_1)
+
+		wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
+		gerrB := bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg_1, out_1)
+		if gerrB != cuda_runtime.CudaSuccess {
+			lg.Debug().Msg(fmt.Sprintf("error in MSM b: %v", gerrB))
+		} else {
+			lg.Debug().Msg("msm b success")
+		}
+		outHost_1.CopyFromDeviceAsync(&out_1, stream_1)
+		ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost_1[0])
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(&ar)
+		close(arDone)
+	})
+	<-arDone
+
+	/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM a: %v", gerr)
@@ -339,7 +367,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	ar.AddMixed(&pk.G1.Alpha)
 	ar.AddMixed(&deltas[0])
-	proof.Ar.FromJacobian(&ar)
+	proof.Ar.FromJacobian(&ar)*/
 
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
