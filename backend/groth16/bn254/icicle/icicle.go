@@ -286,10 +286,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-bs1Done
 
-	/*wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
+	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
 	var wireValuesBdevice core.DeviceSlice
 	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
-	gerr := bn254.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
+	/*gerr := bn254.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM b: %v", gerr)
 	}
@@ -310,7 +310,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	lg.Debug().Msg(fmt.Sprintf("pk.G2Device.B: %d", pk.G2Device.B.GetDeviceId()))
 
-	gerr = bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
+	gerr := bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
 	}
