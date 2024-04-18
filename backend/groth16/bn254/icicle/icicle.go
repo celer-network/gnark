@@ -326,7 +326,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-arDone
 
-	/*arDone := make(chan struct{}, 1)
+	arDone2 := make(chan struct{}, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		cfg_1 := bn254.GetDefaultMSMConfig()
 		stream_1, _ := cuda_runtime.CreateStream()
@@ -350,9 +350,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		close(arDone)
+		close(arDone2)
 	})
-	<-arDone*/
+	<-arDone2
 
 	/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
