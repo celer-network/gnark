@@ -342,11 +342,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHost.CopyFromDeviceAsync(&out, stream)
 	h_device.FreeAsync(stream)
 
+	<-chHDone
+
 	solution.A = nil
 	solution.B = nil
 	solution.C = nil
-
-	<-chHDone
 
 	var cpuKrs2 curve.G1Jac
 	sizeH := int(pk.Domain.Cardinality - 1)
