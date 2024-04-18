@@ -281,7 +281,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	bs1Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calArErr error
-		bs1, calArErr = CalBs1(wireValuesB, &pk.G1Device.B, &pk.G1.Beta, &deltas[1])
+		bs1, calArErr = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
 		bs1Done <- calArErr
 	})
 	<-bs1Done
@@ -330,7 +330,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calArErr error
-		ar, calArErr = CalAr(wireValuesA, &pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
+		ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		proof.Ar.FromJacobian(&ar)
 		arDone <- calArErr
 	})
@@ -377,7 +377,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	return proof, nil
 }
 
-func CalAr(wireValuesA []fr.Element, deviceA *core.DeviceSlice, alpha, deltas0 *curve.G1Affine) (ar curve.G1Jac, err error) {
+func CalAr(wireValuesA []fr.Element, deviceA core.DeviceSlice, alpha, deltas0 *curve.G1Affine) (ar curve.G1Jac, err error) {
 	cfg := bn254.GetDefaultMSMConfig()
 	stream, cudaErr := cuda_runtime.CreateStream()
 	if cudaErr != cuda_runtime.CudaSuccess {
@@ -391,7 +391,7 @@ func CalAr(wireValuesA []fr.Element, deviceA *core.DeviceSlice, alpha, deltas0 *
 	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
 
 	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
-	cudaErr = bn254.Msm(wireValuesAhost, *deviceA, &cfg, out)
+	cudaErr = bn254.Msm(wireValuesAhost, deviceA, &cfg, out)
 	if cudaErr != cuda_runtime.CudaSuccess {
 		return curve.G1Jac{}, fmt.Errorf("ar msm fail: %d", cudaErr)
 	}
@@ -402,7 +402,7 @@ func CalAr(wireValuesA []fr.Element, deviceA *core.DeviceSlice, alpha, deltas0 *
 	return
 }
 
-func CalBs1(wireValuesB []fr.Element, deviceB *core.DeviceSlice, beta, deltas1 *curve.G1Affine) (bs1 curve.G1Jac, err error) {
+func CalBs1(wireValuesB []fr.Element, deviceB core.DeviceSlice, beta, deltas1 *curve.G1Affine) (bs1 curve.G1Jac, err error) {
 	cfg := bn254.GetDefaultMSMConfig()
 	stream, cudaErr := cuda_runtime.CreateStream()
 	if cudaErr != cuda_runtime.CudaSuccess {
@@ -416,9 +416,7 @@ func CalBs1(wireValuesB []fr.Element, deviceB *core.DeviceSlice, beta, deltas1 *
 	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
 
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
-	var wireValuesBdevice core.DeviceSlice
-	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
-	cudaErr = bn254.Msm(wireValuesBdevice, deviceB, &cfg, out)
+	cudaErr = bn254.Msm(wireValuesBhost, deviceB, &cfg, out)
 	if cudaErr != cuda_runtime.CudaSuccess {
 		return curve.G1Jac{}, fmt.Errorf("bs1 msm fail: %d", cudaErr)
 	}
