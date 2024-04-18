@@ -318,7 +318,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	proof.Bs.FromJacobian(&Bs)
 
 	<-chWireValuesA
-	arDone := make(chan error, 1)
+	/*arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calArErr error
 		proof.Ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
@@ -326,7 +326,20 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-arDone
 
-	cuda_runtime.SetDevice(0)
+	cuda_runtime.SetDevice(0)*/
+
+	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
+	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
+	if gerr != cuda_runtime.CudaSuccess {
+		return nil, fmt.Errorf("error in MSM a: %v", gerr)
+	}
+	outHost.CopyFromDeviceAsync(&out, stream)
+
+	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+
+	ar.AddMixed(&pk.G1.Alpha)
+	ar.AddMixed(&deltas[0])
+	proof.Ar.FromJacobian(&ar)
 
 	var krs, krs2, p1 curve.G1Jac
 	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
