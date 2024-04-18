@@ -319,16 +319,18 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesA
 	arDone := make(chan error, 1)
+	var res2 curve.G1Affine
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calArErr error
-		var res2 curve.G1Affine
 		res2, calArErr = CalAr(wireValuesA, &pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		lg.Debug().Msg(fmt.Sprintf("res2: %+v", res2))
 		arDone <- calArErr
 	})
 	<-arDone
 
-	arDone2 := make(chan struct{}, 1)
+	proof.Ar = res2
+
+	/*arDone2 := make(chan struct{}, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		cfg_1 := bn254.GetDefaultMSMConfig()
 		stream_1, _ := cuda_runtime.CreateStream()
@@ -356,7 +358,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		lg.Debug().Msg(fmt.Sprintf("res2 proof.Ar: %+v", proof.Ar))
 		close(arDone2)
 	})
-	<-arDone2
+	<-arDone2*/
 
 	/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
