@@ -321,7 +321,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calArErr error
-		proof.Ar, calArErr = CalAr(wireValuesA, &pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
+		var res2 curve.G1Affine
+		res2, calArErr = CalAr(wireValuesA, &pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
+		lg.Debug().Msg(fmt.Sprintf("res2: %+v", res2))
 		arDone <- calArErr
 	})
 	<-arDone
@@ -351,6 +353,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
+		lg.Debug().Msg(fmt.Sprintf("res2 proof.Ar: %+v", proof.Ar))
 		close(arDone2)
 	})
 	<-arDone2
