@@ -1,26 +1,19 @@
 package icicle_bn254
 
 import (
-	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
-	"io"
-	"unsafe"
-
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	cs "github.com/consensys/gnark/constraint/bn254"
+	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	"io"
 )
 
 type deviceInfo struct {
 	G1Device struct {
 		A, B, K, Z core.DeviceSlice
 	}
-	DomainDevice struct {
-		Twiddles, TwiddlesInv     core.DeviceSlice
-		CosetTable, CosetTableInv unsafe.Pointer
-	}
 	G2Device struct {
 		B core.DeviceSlice
 	}
-	DenDevice             core.DeviceSlice
 	InfinityPointIndicesK []int
 }
 
