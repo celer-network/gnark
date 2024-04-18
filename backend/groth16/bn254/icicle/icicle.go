@@ -340,7 +340,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var out_1 core.DeviceSlice
 		out_1.MallocAsync(outHost_1.SizeOfElement(), outHost_1.SizeOfElement(), stream_1)
 
-		/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
+		wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
 		gerrB := bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg_1, out_1)
 		if gerrB != cuda_runtime.CudaSuccess {
 			lg.Debug().Msg(fmt.Sprintf("error in MSM b: %v", gerrB))
@@ -353,7 +353,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		lg.Debug().Msg(fmt.Sprintf("res2 proof.Ar: %+v", proof.Ar))*/
+		lg.Debug().Msg(fmt.Sprintf("res2 proof.Ar: %+v", proof.Ar))
 		close(arDone2)
 	})
 	<-arDone2
