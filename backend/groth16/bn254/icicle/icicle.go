@@ -296,28 +296,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-BsDone
 
-	// Bs2 (1 multi exp G2 - size = len(wires))
-	/*var Bs2, deltaS curve.G2Jac
-
-	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
-	var outG2 core.DeviceSlice
-	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
-
-	gerr := bn254.G2Msm(wireValuesBhost, pk.G2Device.B, &cfg, outG2)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
-	}
-	outHostG2.CopyFromDeviceAsync(&outG2, stream)
-	outG2.FreeAsync(stream)
-
-	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
-
-	deltaS.FromAffine(&pk.G2.Delta)
-	deltaS.ScalarMultiplication(&deltaS, &s)
-	Bs.AddAssign(&deltaS)
-	Bs.AddMixed(&pk.G2.Beta)
-	proof.Bs.FromJacobian(&Bs)*/
-
 	<-chWireValuesA
 	arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
