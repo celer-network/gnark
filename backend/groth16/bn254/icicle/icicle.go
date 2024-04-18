@@ -348,8 +348,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			lg.Debug().Msg("msm b success")
 		}
 		outHost_1.CopyFromDeviceAsync(&out_1, stream_1)
-		/*ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost_1[0])
-		lg.Debug().Msg(fmt.Sprintf("ar2: %+v", ar))
+		ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost_1[0])
+		/*lg.Debug().Msg(fmt.Sprintf("ar2: %+v", ar))
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
