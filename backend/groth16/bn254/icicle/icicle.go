@@ -291,14 +291,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// Bs2 (1 multi exp G2 - size = len(wires))
 	var Bs, deltaS curve.G2Jac
 
-	cr_device_id, _ := cuda_runtime.GetDevice()
-	lg.Debug().Msg(fmt.Sprintf("cr_device_id: %d", cr_device_id))
-
 	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
 	var outG2 core.DeviceSlice
 	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
-
-	lg.Debug().Msg(fmt.Sprintf("pk.G2Device.B: %d", pk.G2Device.B.GetDeviceId()))
 
 	gerr := bn254.G2Msm(wireValuesBhost, pk.G2Device.B, &cfg, outG2)
 	if gerr != cuda_runtime.CudaSuccess {
