@@ -4,7 +4,9 @@ package icicle_bn254
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
+	"runtime"
 	"sync"
 	"time"
 
@@ -247,12 +249,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
 
 	// cpu calculate h
-	/*var h []fr.Element
+	var h []fr.Element
 	chHDone := make(chan struct{}, 1)
 	go func() {
 		h = computeH(solution.A, solution.B, solution.C, &pk.Domain)
 		chHDone <- struct{}{}
-	}()*/
+	}()
 
 	// sample random r and s
 	var r, s big.Int
@@ -340,20 +342,20 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	outHost.CopyFromDeviceAsync(&out, stream)
 	h_device.FreeAsync(stream)
 
-	//<-chHDone
+	<-chHDone
 
 	solution.A = nil
 	solution.B = nil
 	solution.C = nil
 
-	/*var cpuKrs2 curve.G1Jac
+	var cpuKrs2 curve.G1Jac
 	sizeH := int(pk.Domain.Cardinality - 1)
 	_, err = cpuKrs2.MultiExp(pk.G1.Z, h[:sizeH], ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
 	if err != nil {
 		return nil, fmt.Errorf("error in cpu MultiExp cpuKrs2: %v", err)
-	}*/
+	}
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	//lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
+	lg.Debug().Msg(fmt.Sprintf("gpu ar equal cpu krs2: %v", cpuKrs2.Equal(&krs2)))
 	<-chWireValues
 	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
 	gerr = bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
