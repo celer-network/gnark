@@ -287,8 +287,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-bs1Done
 
 	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
-	var wireValuesBdevice core.DeviceSlice
-	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
 
 	// Bs2 (1 multi exp G2 - size = len(wires))
 	var Bs, deltaS curve.G2Jac
@@ -302,13 +300,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	lg.Debug().Msg(fmt.Sprintf("pk.G2Device.B: %d", pk.G2Device.B.GetDeviceId()))
 
-	gerr := bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
+	gerr := bn254.G2Msm(wireValuesBhost, pk.G2Device.B, &cfg, outG2)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
 	}
 	outHostG2.CopyFromDeviceAsync(&outG2, stream)
 	outG2.FreeAsync(stream)
-	wireValuesBdevice.FreeAsync(stream)
 
 	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
 
