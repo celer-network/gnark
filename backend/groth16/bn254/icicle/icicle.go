@@ -358,7 +358,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-arDone2
 
-	//lg.Debug().Msg(fmt.Sprintf("res2 equal: %v", proof.Ar.Equal(&res2)))
+	lg.Debug().Msg(fmt.Sprintf("res2 equal: %v", proof.Ar.Equal(&res2)))
 	proof.Ar = res2
 
 	/*wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
