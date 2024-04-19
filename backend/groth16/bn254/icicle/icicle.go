@@ -112,7 +112,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	copyG2BDone := make(chan core.DeviceSlice, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(4, func(args ...any) {
 		iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
 	})
 	pk.G2Device.B = <-copyG2BDone
@@ -280,7 +280,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 
 	BsDone := make(chan error, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(4, func(args ...any) {
 		var Bs curve.G2Jac
 		var calBsErr error
 		Bs, calBsErr = CalG2Bs(wireValuesB, pk.G2Device.B, &pk.G2.Delta, &pk.G2.Beta, s)
