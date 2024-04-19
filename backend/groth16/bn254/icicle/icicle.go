@@ -68,7 +68,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
 	copyADone := make(chan core.DeviceSlice, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(1, func(args ...any) {
 		iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone)
 	})
 
@@ -290,7 +290,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesA
 	arDone := make(chan error, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(1, func(args ...any) {
 		var calArErr error
 		ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		proof.Ar.FromJacobian(&ar)
