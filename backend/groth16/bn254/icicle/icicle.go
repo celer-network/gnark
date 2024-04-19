@@ -278,7 +278,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		lg.Debug().Msg(fmt.Sprintf("start bs1"))
 		var calBs1Err error
 		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
-		lg.Debug().Dur("prove bs1 done", time.Since(start_sub))
+		lg.Debug().Dur("prove bs1", time.Since(start_sub)).Msg("done")
 		bs1Done <- calBs1Err
 	})
 
@@ -290,7 +290,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var calBsErr error
 		Bs, calBsErr = CalG2Bs(wireValuesB, pk.G2Device.B, &pk.G2.Delta, &pk.G2.Beta, s)
 		proof.Bs.FromJacobian(&Bs)
-		lg.Debug().Dur("prove Bs done", time.Since(start_sub))
+		lg.Debug().Dur("prove Bs", time.Since(start_sub)).Msg("done")
 		BsDone <- calBsErr
 	})
 
@@ -302,7 +302,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var calArErr error
 		ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		lg.Debug().Dur("prove ar done", time.Since(start_sub))
+		lg.Debug().Dur("prove ar", time.Since(start_sub)).Msg("done")
 		arDone <- calArErr
 	})
 
@@ -325,7 +325,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		lg.Debug().Msg(fmt.Sprintf("start krs"))
 		var calkrsErr error
 		krs, calkrsErr = CalKrs(_wireValues, pk.G1Device.K)
-		lg.Debug().Dur("prove krs done", time.Since(start_sub))
+		lg.Debug().Dur("prove krs", time.Since(start_sub)).Msg("done")
 		krsDone <- calkrsErr
 	})
 	<-krsDone
@@ -445,7 +445,7 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 	start_sub := time.Now()
 	lg.Debug().Msg(fmt.Sprintf("start bs1"))
 	h_device := computeHonDevice(a, b, c, domain, stream)
-	lg.Debug().Dur("prove h device done", time.Since(start_sub))
+	lg.Debug().Dur("prove h device", time.Since(start_sub)).Msg("done")
 
 	start_sub = time.Now()
 	lg.Debug().Msg(fmt.Sprintf("start krs2"))
@@ -458,7 +458,7 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 		return curve.G1Jac{}, fmt.Errorf("MSM krs2 fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
-	lg.Debug().Dur("prove krs2 done", time.Since(start_sub))
+	lg.Debug().Dur("prove krs2", time.Since(start_sub)).Msg("done")
 	out.FreeAsync(stream)
 	h_device.FreeAsync(stream)
 
