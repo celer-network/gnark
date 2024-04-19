@@ -312,23 +312,22 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	})
 	<-arDone
 
-	var krs, krs2, p1 curve.G1Jac
-	gerr := bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM z: %v", gerr)
-	}
-	outHost.CopyFromDeviceAsync(&out, stream)
-	h_device.FreeAsync(stream)
+	var krs2, krs, p1 curve.G1Jac
 
-	solution.A = nil
-	solution.B = nil
-	solution.C = nil
-
-	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	krs2Done := make(chan error, 1)
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		var calkrs2Err error
+		krs2, calkrs2Err = CalKrs2(h_device, pk.G1Device.Z)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		krs2Done <- calkrs2Err
+	})
+	<-krs2Done
 
 	<-chWireValues
 	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
-	gerr = bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
+	gerr := bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
 	if gerr != cuda_runtime.CudaSuccess {
 		return nil, fmt.Errorf("error in MSM k: %v", gerr)
 	}
@@ -431,6 +430,30 @@ func CalG2Bs(wireValuesB []fr.Element, deviceG2B core.DeviceSlice, delta, beta *
 	deltaS.ScalarMultiplication(&deltaS, &s)
 	Bs.AddAssign(&deltaS)
 	Bs.AddMixed(beta)
+	return
+}
+
+func CalKrs2(h_device, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
+	cfg := bn254.GetDefaultMSMConfig()
+	stream, cudaErr := cuda_runtime.CreateStream()
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G1Jac{}, fmt.Errorf("create krs2 stream fail: %d", cudaErr)
+	}
+	cfg.Ctx.Stream = &stream
+	cfg.IsAsync = true
+
+	outHost := make(core.HostSlice[bn254.Projective], 1)
+	var out core.DeviceSlice
+	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
+
+	gerr := bn254.Msm(h_device, deviceZ, &cfg, out)
+	if gerr != cuda_runtime.CudaSuccess {
+		return curve.G1Jac{}, fmt.Errorf("error in MSM krs2: %v", gerr)
+	}
+	outHost.CopyFromDeviceAsync(&out, stream)
+	h_device.FreeAsync(stream)
+
+	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	return
 }
 
