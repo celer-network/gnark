@@ -52,15 +52,18 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	lg.Info().Msg("start setupDevicePointers")
 	pk.deviceInfo = &deviceInfo{}
 
-	// ntt config
-	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
-	var s bn254.ScalarField
-
 	// domain.Generator
-	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
-	genBits := gen.Bits()
-	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
-	bn254.InitDomain(s, ctx, false)
+	initDomainDone := make(chan chan struct{}, 1)
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		// ntt config
+		ctx, _ := cuda_runtime.GetDefaultDeviceContext()
+		var s bn254.ScalarField
+		gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
+		genBits := gen.Bits()
+		s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
+		bn254.InitDomain(s, ctx, false)
+		close(initDomainDone)
+	})
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
@@ -104,6 +107,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G1Device.B = <-copyBDone
 	pk.G1Device.K = <-copyKDone
 	pk.G1Device.Z = <-copyZDone
+	<-initDomainDone
 
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
@@ -114,7 +118,6 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.G2Device.B = <-copyG2BDone
 
 	lg.Info().Msg("end setupDevicePointers")
-
 	return nil
 }
 
