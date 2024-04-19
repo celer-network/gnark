@@ -284,7 +284,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		proof.Bs.FromJacobian(&Bs)
 		BsDone <- calBsErr
 	})
-	<-BsDone
 
 	<-chWireValuesA
 	arDone := make(chan error, 1)
@@ -294,7 +293,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		proof.Ar.FromJacobian(&ar)
 		arDone <- calArErr
 	})
-	<-arDone
 
 	var krs2, krs, p1 curve.G1Jac
 
@@ -307,10 +305,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		solution.C = nil
 		krs2Done <- calkrs2Err
 	})
-	<-krs2Done
 
 	<-chWireValues
-
 	krsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calkrsErr error
@@ -320,15 +316,17 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-krsDone
 
 	krs.AddMixed(&deltas[2])
+	<-krs2Done
 	krs.AddAssign(&krs2)
+	<-arDone
 	p1.ScalarMultiplication(&ar, &s)
 	krs.AddAssign(&p1)
 	<-bs1Done
 	p1.ScalarMultiplication(&bs1, &r)
 	krs.AddAssign(&p1)
-
 	proof.Krs.FromJacobian(&krs)
 
+	<-BsDone
 	<-chPedersenDone
 
 	lg.Debug().Dur("took", time.Since(start)).Msg("prover done")
