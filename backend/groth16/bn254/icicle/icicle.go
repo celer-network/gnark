@@ -570,14 +570,14 @@ func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runt
 	b_host.CopyToDeviceAsync(&b_device, stream, true)
 	c_host.CopyToDeviceAsync(&c_device, stream, true)
 
-	cfg.Ordering = core.KNM
+	//cfg.Ordering = core.KNM
 
 	bn254.Ntt(a_device, core.KInverse, &cfg, a_device)
 	bn254.Ntt(b_device, core.KInverse, &cfg, b_device)
 	bn254.Ntt(c_device, core.KInverse, &cfg, c_device)
 
 	cfg.CosetGen = configCosetGen
-	cfg.Ordering = core.KMN
+	//cfg.Ordering = core.KMN
 
 	bn254.Ntt(a_device, core.KForward, &cfg, a_device)
 	bn254.Ntt(b_device, core.KForward, &cfg, b_device)
