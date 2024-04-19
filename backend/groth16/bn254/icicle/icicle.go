@@ -326,15 +326,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-krs2Done
 
 	<-chWireValues
-	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
-	gerr := bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM k: %v", gerr)
-	}
-	outHost.CopyFromDeviceAsync(&out, stream)
-	out.FreeAsync(stream)
 
-	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	krsDone := make(chan error, 1)
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		var calkrsErr error
+		krs, calkrsErr = CalKrs(_wireValues, pk.G1Device.K)
+		krsDone <- calkrsErr
+	})
+	<-krsDone
 
 	krs.AddMixed(&deltas[2])
 	krs.AddAssign(&krs2)
@@ -446,14 +445,38 @@ func CalKrs2(h_device, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
 	var out core.DeviceSlice
 	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
 
-	gerr := bn254.Msm(h_device, deviceZ, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return curve.G1Jac{}, fmt.Errorf("error in MSM krs2: %v", gerr)
+	cudaErr = bn254.Msm(h_device, deviceZ, &cfg, out)
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G1Jac{}, fmt.Errorf("MSM krs2 fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
 	h_device.FreeAsync(stream)
 
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	return
+}
+
+func CalKrs(_wireValues []fr.Element, deviceK core.DeviceSlice) (krs curve.G1Jac, err error) {
+	cfg := bn254.GetDefaultMSMConfig()
+	stream, cudaErr := cuda_runtime.CreateStream()
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G1Jac{}, fmt.Errorf("create krs stream fail: %d", cudaErr)
+	}
+	cfg.Ctx.Stream = &stream
+	cfg.IsAsync = true
+
+	outHost := make(core.HostSlice[bn254.Projective], 1)
+	var out core.DeviceSlice
+	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
+
+	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
+	cudaErr = bn254.Msm(_wireValuesHost, deviceK, &cfg, out)
+	if cudaErr != cuda_runtime.CudaSuccess {
+		return curve.G1Jac{}, fmt.Errorf("MSM krs fail: %d", cudaErr)
+	}
+	outHost.CopyFromDeviceAsync(&out, stream)
+	out.FreeAsync(stream)
+	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	return
 }
 
