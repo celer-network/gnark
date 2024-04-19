@@ -356,6 +356,7 @@ func CalAr(wireValuesA []fr.Element, deviceA core.DeviceSlice, alpha, deltas0 *c
 		return curve.G1Jac{}, fmt.Errorf("ar msm fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+	out.FreeAsync(stream)
 	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	ar.AddMixed(alpha)
 	ar.AddMixed(deltas0)
@@ -381,6 +382,7 @@ func CalBs1(wireValuesB []fr.Element, deviceB core.DeviceSlice, beta, deltas1 *c
 		return curve.G1Jac{}, fmt.Errorf("bs1 msm fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+	out.FreeAsync(stream)
 	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
 	bs1.AddMixed(beta)
 	bs1.AddMixed(deltas1)
@@ -438,6 +440,7 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 		return curve.G1Jac{}, fmt.Errorf("MSM krs2 fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+	out.FreeAsync(stream)
 	h_device.FreeAsync(stream)
 
 	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
