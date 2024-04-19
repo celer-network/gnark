@@ -274,26 +274,35 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chWireValuesB
 	bs1Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(2, func(args ...any) {
+		start_sub := time.Now()
+		lg.Debug().Msg(fmt.Sprintf("start bs1"))
 		var calBs1Err error
 		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
+		lg.Debug().Dur("prove bs1 done", time.Since(start_sub))
 		bs1Done <- calBs1Err
 	})
 
 	BsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(4, func(args ...any) {
+		start_sub := time.Now()
+		lg.Debug().Msg(fmt.Sprintf("start Bs"))
 		var Bs curve.G2Jac
 		var calBsErr error
 		Bs, calBsErr = CalG2Bs(wireValuesB, pk.G2Device.B, &pk.G2.Delta, &pk.G2.Beta, s)
 		proof.Bs.FromJacobian(&Bs)
+		lg.Debug().Dur("prove Bs done", time.Since(start_sub))
 		BsDone <- calBsErr
 	})
 
 	<-chWireValuesA
 	arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(1, func(args ...any) {
+		start_sub := time.Now()
+		lg.Debug().Msg(fmt.Sprintf("start ar"))
 		var calArErr error
 		ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		proof.Ar.FromJacobian(&ar)
+		lg.Debug().Dur("prove ar done", time.Since(start_sub))
 		arDone <- calArErr
 	})
 
@@ -312,8 +321,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	<-chWireValues
 	krsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(3, func(args ...any) {
+		start_sub := time.Now()
+		lg.Debug().Msg(fmt.Sprintf("start krs"))
 		var calkrsErr error
 		krs, calkrsErr = CalKrs(_wireValues, pk.G1Device.K)
+		lg.Debug().Dur("prove krs done", time.Since(start_sub))
 		krsDone <- calkrsErr
 	})
 	<-krsDone
@@ -421,6 +433,7 @@ func CalG2Bs(wireValuesB []fr.Element, deviceG2B core.DeviceSlice, delta, beta *
 }
 
 func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
+	lg := logger.Logger()
 	cfg := bn254.GetDefaultMSMConfig()
 	stream, cudaErr := cuda_runtime.CreateStream()
 	if cudaErr != cuda_runtime.CudaSuccess {
@@ -429,8 +442,13 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 	cfg.Ctx.Stream = &stream
 	cfg.IsAsync = true
 
+	start_sub := time.Now()
+	lg.Debug().Msg(fmt.Sprintf("start bs1"))
 	h_device := computeHonDevice(a, b, c, domain, stream)
+	lg.Debug().Dur("prove h device done", time.Since(start_sub))
 
+	start_sub = time.Now()
+	lg.Debug().Msg(fmt.Sprintf("start krs2"))
 	outHost := make(core.HostSlice[bn254.Projective], 1)
 	var out core.DeviceSlice
 	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
@@ -440,6 +458,7 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 		return curve.G1Jac{}, fmt.Errorf("MSM krs2 fail: %d", cudaErr)
 	}
 	outHost.CopyFromDeviceAsync(&out, stream)
+	lg.Debug().Dur("prove krs2 done", time.Since(start_sub))
 	out.FreeAsync(stream)
 	h_device.FreeAsync(stream)
 
