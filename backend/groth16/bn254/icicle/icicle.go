@@ -86,14 +86,18 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	}
 
 	copyKDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pointsNoInfinity, copyKDone) // Make a function for points
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		iciclegnark.CopyPointsToDevice(pointsNoInfinity, copyKDone)
+	})
 
 	/*************************     Z      ***************************/
 	copyZDone := make(chan core.DeviceSlice, 1)
 	padding := make([]curve.G1Affine, 1)
 	// padding[0] = curve.G1Affine.generator()
 	Z_plus_point := append(pk.G1.Z, padding...)
-	go iciclegnark.CopyPointsToDevice(Z_plus_point, copyZDone) // Make a function for points
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		iciclegnark.CopyPointsToDevice(Z_plus_point, copyZDone)
+	})
 
 	/*************************  End G1 Device Setup  ***************************/
 	pk.G1Device.A = <-copyADone
@@ -104,7 +108,9 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	/*************************  Start G2 Device Setup  ***************************/
 	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
 	copyG2BDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	cuda_runtime.RunOnDevice(0, func(args ...any) {
+		iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
+	})
 	pk.G2Device.B = <-copyG2BDone
 
 	lg.Info().Msg("end setupDevicePointers")
