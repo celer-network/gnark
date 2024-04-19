@@ -44,6 +44,9 @@ func TestLargeCircuitInGpuOnBn254(t *testing.T) {
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
 	assert.NoError(err)
+	for i := 0; i < 10; i++ {
+		groth16.Prove(innerCcs, innerPK, innerWitness)
+	}
 	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness)
 	assert.NoError(err)
 	innerPubWitness, err := innerWitness.Public()
