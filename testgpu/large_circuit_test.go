@@ -1,6 +1,9 @@
 package testgpu
 
 import (
+	"os"
+	"testing"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
@@ -8,11 +11,9 @@ import (
 	"github.com/consensys/gnark/logger"
 	"github.com/consensys/gnark/test"
 	"github.com/rs/zerolog"
-	"os"
-	"testing"
 )
 
-const TEST_SIZE = 1 * 10000
+const TEST_SIZE = 1 * 10000000
 
 type LargeCircuitCommitment struct {
 	P, Q [TEST_SIZE]frontend.Variable

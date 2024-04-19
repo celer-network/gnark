@@ -1,9 +1,10 @@
 package icicle_bn254
 
 import (
-	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
 	"io"
-	"unsafe"
+
+	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	"github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
 
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	cs "github.com/consensys/gnark/constraint/bn254"
@@ -11,17 +12,14 @@ import (
 
 type deviceInfo struct {
 	G1Device struct {
-		A, B, K, Z core.DeviceSlice
+		A, B, K, Z core.HostSlice[bn254.Affine]
 	}
 	DomainDevice struct {
-		Twiddles, TwiddlesInv     core.DeviceSlice
-		CosetTable, CosetTableInv unsafe.Pointer
+		Twiddles, TwiddlesInv core.DeviceSlice
 	}
 	G2Device struct {
-		B core.DeviceSlice
+		B core.HostSlice[bn254.G2Affine]
 	}
-	DenDevice             core.DeviceSlice
-	InfinityPointIndicesK []int
 }
 
 type ProvingKey struct {

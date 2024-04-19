@@ -9,7 +9,6 @@ import (
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
@@ -64,44 +63,29 @@ func (pk *ProvingKey) setupDevicePointers() error {
 
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
-	copyADone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.A, copyADone) // Make a function for points
+	icicleA := iciclegnark.BatchConvertFromG1Affine(pk.G1.A)
+	pk.G1Device.A = core.HostSliceFromElements(icicleA)
 
 	/*************************     B      ***************************/
-	copyBDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.B, copyBDone) // Make a function for points
+	icicleB := iciclegnark.BatchConvertFromG1Affine(pk.G1.B)
+	pk.G1Device.B = core.HostSliceFromElements(icicleB)
 
 	/*************************     K      ***************************/
-	var pointsNoInfinity []curve.G1Affine
-	for i, gnarkPoint := range pk.G1.K {
-		if gnarkPoint.IsInfinity() {
-			pk.InfinityPointIndicesK = append(pk.InfinityPointIndicesK, i)
-		} else {
-			pointsNoInfinity = append(pointsNoInfinity, gnarkPoint)
-		}
-	}
-
-	copyKDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyPointsToDevice(pointsNoInfinity, copyKDone) // Make a function for points
+	icicleK := iciclegnark.BatchConvertFromG1Affine(pk.G1.K)
+	pk.G1Device.K = core.HostSliceFromElements(icicleK)
 
 	/*************************     Z      ***************************/
-	copyZDone := make(chan core.DeviceSlice, 1)
 	padding := make([]curve.G1Affine, 1)
 	// padding[0] = curve.G1Affine.generator()
 	Z_plus_point := append(pk.G1.Z, padding...)
-	go iciclegnark.CopyPointsToDevice(Z_plus_point, copyZDone) // Make a function for points
-
-	/*************************  End G1 Device Setup  ***************************/
-	pk.G1Device.A = <-copyADone
-	pk.G1Device.B = <-copyBDone
-	pk.G1Device.K = <-copyKDone
-	pk.G1Device.Z = <-copyZDone
+	icicleZ := iciclegnark.BatchConvertFromG1Affine(Z_plus_point)
+	pk.G1Device.Z = core.HostSliceFromElements(icicleZ)
 
 	/*************************  Start G2 Device Setup  ***************************/
-	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
-	copyG2BDone := make(chan core.DeviceSlice, 1)
-	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	pk.G2Device.B = <-copyG2BDone
+	icicleB2 := iciclegnark.BatchConvertFromG2Affine(pk.G2.B)
+	pk.G2Device.B = core.HostSliceFromElements(icicleB2)
+
+	fmt.Println("Size of domain: ", 2*pk.Domain.Cardinality, "; Size of points:", pk.G1Device.A.Len(), pk.G1Device.B.Len(), pk.G1Device.K.Len(), pk.G1Device.Z.Len(), pk.G2Device.B.Len())
 
 	lg.Info().Msg("end setupDevicePointers")
 
@@ -184,7 +168,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	for i := range commitmentInfo {
 		copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
 	}
-	
+
 	var errPedersen error
 	chPedersenDone := make(chan struct{}, 1)
 	go func() {
@@ -468,14 +452,11 @@ func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runt
 	b_host.CopyToDeviceAsync(&b_device, stream, true)
 	c_host.CopyToDeviceAsync(&c_device, stream, true)
 
-	cfg.Ordering = core.KNM
-
 	bn254.Ntt(a_device, core.KInverse, &cfg, a_device)
 	bn254.Ntt(b_device, core.KInverse, &cfg, b_device)
 	bn254.Ntt(c_device, core.KInverse, &cfg, c_device)
 
 	cfg.CosetGen = configCosetGen
-	cfg.Ordering = core.KMN
 
 	bn254.Ntt(a_device, core.KForward, &cfg, a_device)
 	bn254.Ntt(b_device, core.KForward, &cfg, b_device)
