@@ -210,10 +210,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, errPedersen
 	}
 
-	stream, _ := cuda_runtime.CreateStream()
-	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
-	ctx.Stream = &stream
-
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesA, wireValuesB, _wireValues []fr.Element
@@ -253,9 +249,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		close(chWireValues)
 	}()
 
-	// H (witness reduction / FFT part)
-	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
-
 	// sample random r and s
 	var r, s big.Int
 	var _r, _s, _kr fr.Element
@@ -275,14 +268,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	cfg := bn254.GetDefaultMSMConfig()
-	cfg.Ctx.Stream = &stream
-	cfg.IsAsync = true
-
-	outHost := make(core.HostSlice[bn254.Projective], 1)
-	var out core.DeviceSlice
-	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
-
 	<-chWireValuesB
 	bs1Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
@@ -290,7 +275,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
 		bs1Done <- calBs1Err
 	})
-	<-bs1Done
 
 	BsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
@@ -317,7 +301,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	krs2Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(0, func(args ...any) {
 		var calkrs2Err error
-		krs2, calkrs2Err = CalKrs2(h_device, pk.G1Device.Z)
+		krs2, calkrs2Err = CalKrs2(solution.A, solution.B, solution.C, &pk.Domain, pk.G1Device.Z)
 		solution.A = nil
 		solution.B = nil
 		solution.C = nil
@@ -339,6 +323,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	krs.AddAssign(&krs2)
 	p1.ScalarMultiplication(&ar, &s)
 	krs.AddAssign(&p1)
+	<-bs1Done
 	p1.ScalarMultiplication(&bs1, &r)
 	krs.AddAssign(&p1)
 
@@ -432,7 +417,7 @@ func CalG2Bs(wireValuesB []fr.Element, deviceG2B core.DeviceSlice, delta, beta *
 	return
 }
 
-func CalKrs2(h_device, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
+func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
 	cfg := bn254.GetDefaultMSMConfig()
 	stream, cudaErr := cuda_runtime.CreateStream()
 	if cudaErr != cuda_runtime.CudaSuccess {
@@ -440,6 +425,8 @@ func CalKrs2(h_device, deviceZ core.DeviceSlice) (krs2 curve.G1Jac, err error) {
 	}
 	cfg.Ctx.Stream = &stream
 	cfg.IsAsync = true
+
+	h_device := computeHonDevice(a, b, c, domain, stream)
 
 	outHost := make(core.HostSlice[bn254.Projective], 1)
 	var out core.DeviceSlice
