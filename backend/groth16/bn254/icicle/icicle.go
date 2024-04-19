@@ -275,22 +275,24 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	bs1Done := make(chan error, 1)
 	cuda_runtime.RunOnDevice(2, func(args ...any) {
 		start_sub := time.Now()
-		lg.Debug().Msg(fmt.Sprintf("start bs1"))
+		log := logger.Logger()
+		log.Debug().Msg(fmt.Sprintf("start bs1"))
 		var calBs1Err error
 		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
-		lg.Debug().Dur("prove bs1", time.Since(start_sub)).Msg("done")
+		log.Debug().Dur("prove bs1", time.Since(start_sub)).Msg("done")
 		bs1Done <- calBs1Err
 	})
 
 	BsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(4, func(args ...any) {
 		start_sub := time.Now()
-		lg.Debug().Msg(fmt.Sprintf("start Bs"))
+		log := logger.Logger()
+		log.Debug().Msg(fmt.Sprintf("start Bs"))
 		var Bs curve.G2Jac
 		var calBsErr error
 		Bs, calBsErr = CalG2Bs(wireValuesB, pk.G2Device.B, &pk.G2.Delta, &pk.G2.Beta, s)
 		proof.Bs.FromJacobian(&Bs)
-		lg.Debug().Dur("prove Bs", time.Since(start_sub)).Msg("done")
+		log.Debug().Dur("prove Bs", time.Since(start_sub)).Msg("done")
 		BsDone <- calBsErr
 	})
 
@@ -298,11 +300,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	arDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(1, func(args ...any) {
 		start_sub := time.Now()
-		lg.Debug().Msg(fmt.Sprintf("start ar"))
+		log := logger.Logger()
+		log.Debug().Msg(fmt.Sprintf("start ar"))
 		var calArErr error
 		ar, calArErr = CalAr(wireValuesA, pk.G1Device.A, &pk.G1.Alpha, &deltas[0])
 		proof.Ar.FromJacobian(&ar)
-		lg.Debug().Dur("prove ar", time.Since(start_sub)).Msg("done")
+		log.Debug().Dur("prove ar", time.Since(start_sub)).Msg("done")
 		arDone <- calArErr
 	})
 
@@ -322,10 +325,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	krsDone := make(chan error, 1)
 	cuda_runtime.RunOnDevice(3, func(args ...any) {
 		start_sub := time.Now()
-		lg.Debug().Msg(fmt.Sprintf("start krs"))
+		log := logger.Logger()
+		log.Debug().Msg(fmt.Sprintf("start krs"))
 		var calkrsErr error
 		krs, calkrsErr = CalKrs(_wireValues, pk.G1Device.K)
-		lg.Debug().Dur("prove krs", time.Since(start_sub)).Msg("done")
+		log.Debug().Dur("prove krs", time.Since(start_sub)).Msg("done")
 		krsDone <- calkrsErr
 	})
 	<-krsDone
@@ -443,7 +447,7 @@ func CalKrs2(a, b, c []fr.Element, domain *fft.Domain, deviceZ core.DeviceSlice)
 	cfg.IsAsync = true
 
 	start_sub := time.Now()
-	lg.Debug().Msg(fmt.Sprintf("start bs1"))
+	lg.Debug().Msg(fmt.Sprintf("start h device"))
 	h_device := computeHonDevice(a, b, c, domain, stream)
 	lg.Debug().Dur("prove h device", time.Since(start_sub)).Msg("done")
 
