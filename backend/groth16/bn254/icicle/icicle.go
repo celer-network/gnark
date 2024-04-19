@@ -74,7 +74,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 
 	/*************************     B      ***************************/
 	copyBDone := make(chan core.DeviceSlice, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(2, func(args ...any) {
 		iciclegnark.CopyPointsToDevice(pk.G1.B, copyBDone)
 	})
 
@@ -273,7 +273,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	<-chWireValuesB
 	bs1Done := make(chan error, 1)
-	cuda_runtime.RunOnDevice(0, func(args ...any) {
+	cuda_runtime.RunOnDevice(2, func(args ...any) {
 		var calBs1Err error
 		bs1, calBs1Err = CalBs1(wireValuesB, pk.G1Device.B, &pk.G1.Beta, &deltas[1])
 		bs1Done <- calBs1Err
