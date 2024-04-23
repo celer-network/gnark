@@ -4,6 +4,9 @@ package groth16
 // this is an experimental feature and gnark solidity generator as not been thoroughly tested
 const solidityTemplate = `
 {{- $numPublic := sub (len .G1.K) 1 }}
+{{- $numCommitments := len .PublicAndCommitmentCommitted }}
+{{- $numWitness := sub $numPublic $numCommitments }}
+{{- $PublicAndCommitmentCommitted := .PublicAndCommitmentCommitted }}
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.0;
@@ -40,6 +43,8 @@ contract Verifier {
     //     R = 36⋅t⁴ + 36⋅t³ + 18⋅t² + 6⋅t + 1
     uint256 constant P = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47;
     uint256 constant R = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001;
+
+	uint256 constant MOD_R = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     // Extension field Fp2 = Fp[i] / (i² + 1)
     // Note: This is the complex extension field of Fp with i² = -1.
@@ -78,6 +83,20 @@ contract Verifier {
     uint256 constant DELTA_NEG_X_1 = {{.G2.Delta.X.A1.String}};
     uint256 constant DELTA_NEG_Y_0 = {{.G2.Delta.Y.A0.String}};
     uint256 constant DELTA_NEG_Y_1 = {{.G2.Delta.Y.A1.String}};
+
+	{{- if gt $numCommitments 0 }}
+    // Pedersen G point in G2 in powers of i
+    uint256 constant PEDERSEN_G_X_0 = {{.CommitmentKey.G.X.A0.String}};
+    uint256 constant PEDERSEN_G_X_1 = {{.CommitmentKey.G.X.A1.String}};
+    uint256 constant PEDERSEN_G_Y_0 = {{.CommitmentKey.G.Y.A0.String}};
+    uint256 constant PEDERSEN_G_Y_1 = {{.CommitmentKey.G.Y.A1.String}};
+
+    // Pedersen GRootSigmaNeg point in G2 in powers of i
+    uint256 constant PEDERSEN_GROOTSIGMANEG_X_0 = {{.CommitmentKey.GRootSigmaNeg.X.A0.String}};
+    uint256 constant PEDERSEN_GROOTSIGMANEG_X_1 = {{.CommitmentKey.GRootSigmaNeg.X.A1.String}};
+    uint256 constant PEDERSEN_GROOTSIGMANEG_Y_0 = {{.CommitmentKey.GRootSigmaNeg.Y.A0.String}};
+    uint256 constant PEDERSEN_GROOTSIGMANEG_Y_1 = {{.CommitmentKey.GRootSigmaNeg.Y.A1.String}};
+    {{- end }}
 
     // Constant and public input points
     {{- $k0 := index .G1.K 0}}
