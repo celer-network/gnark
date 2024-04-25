@@ -3,7 +3,7 @@ package icicle_bw6761
 import (
 	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
 	cs "github.com/consensys/gnark/constraint/bw6-761"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
+	"github.com/ingonyama-zk/icicle/v2/wrappers/golang/core"
 	"io"
 )
 

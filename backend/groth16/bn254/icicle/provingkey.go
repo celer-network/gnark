@@ -1,10 +1,11 @@
 package icicle_bn254
 
 import (
+	"github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254/g2"
 	"io"
 
-	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
+	"github.com/ingonyama-zk/icicle/v2/wrappers/golang/core"
+	"github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254"
 
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	cs "github.com/consensys/gnark/constraint/bn254"
@@ -18,7 +19,7 @@ type deviceInfo struct {
 		Twiddles, TwiddlesInv core.DeviceSlice
 	}
 	G2Device struct {
-		B core.HostSlice[bn254.G2Affine]
+		B core.HostSlice[g2.G2Affine]
 	}
 }
 
