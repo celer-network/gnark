@@ -12,7 +12,7 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/icza/bitio v1.1.0
-	github.com/ingonyama-zk/icicle/v2 v2.0.2
+	github.com/ingonyama-zk/icicle/v2 v2.0.3
 	github.com/ingonyama-zk/iciclegnark v0.0.0
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.30.0
@@ -34,4 +34,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/ingonyama-zk/iciclegnark => github.com/liuxiaobleach/iciclegnark v0.0.0-20240425072341-a1440de70a42
+replace github.com/ingonyama-zk/iciclegnark => github.com/liuxiaobleach/iciclegnark v0.0.0-20240428031050-6b47980d5d73
