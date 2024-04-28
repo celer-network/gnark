@@ -5,10 +5,11 @@ package icicle_bn254
 import (
 	"fmt"
 	"math/big"
-	"sync"
+	"math/bits"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/hash_to_field"
@@ -20,82 +21,170 @@ import (
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bn254"
 	"github.com/consensys/gnark/constraint/solver"
-	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/core"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/cuda_runtime"
-	"github.com/ingonyama-zk/icicle/wrappers/golang/curves/bn254"
-	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bn254"
+
+	icicle_core "github.com/ingonyama-zk/icicle/v2/wrappers/golang/core"
+	icicle_cr "github.com/ingonyama-zk/icicle/v2/wrappers/golang/cuda_runtime"
+	icicle_bn254 "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254"
+	icicle_g2 "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254/g2"
+	icicle_msm "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254/msm"
+	icicle_ntt "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254/ntt"
+	icicle_vecops "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bn254/vecOps"
+
+	fcs "github.com/consensys/gnark/frontend/cs"
 )
 
 const HasIcicle = true
 
-var (
-	setupDeviceLock sync.Mutex
-	gpuResourceLock sync.Mutex
-)
-
-func SetupDevicePointers(pk *ProvingKey) error {
-	// TODO, add lock here to make sure only init once
-	return pk.setupDevicePointers()
-}
-
 func (pk *ProvingKey) setupDevicePointers() error {
-	setupDeviceLock.Lock()
-	defer setupDeviceLock.Unlock()
 	if pk.deviceInfo != nil {
 		return nil
 	}
-	lg := logger.Logger().With().Str("curve", "bn254").Str("acceleration", "icicle").Str("backend", "groth16").Logger()
-	lg.Info().Msg("start setupDevicePointers")
 	pk.deviceInfo = &deviceInfo{}
+	/*************************     Den      ***************************/
+	n := int(pk.Domain.Cardinality)
+	var denI, oneI fr.Element
+	oneI.SetOne()
+	denI.Exp(pk.Domain.FrMultiplicativeGen, big.NewInt(int64(pk.Domain.Cardinality)))
+	denI.Sub(&denI, &oneI).Inverse(&denI)
 
-	// ntt config
-	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
-	var s bn254.ScalarField
+	log2SizeFloor := bits.Len(uint(n)) - 1
+	denIcicleArr := []fr.Element{denI}
+	for i := 0; i < log2SizeFloor; i++ {
+		denIcicleArr = append(denIcicleArr, denIcicleArr...)
+	}
+	pow2Remainder := n - 1<<log2SizeFloor
+	for i := 0; i < pow2Remainder; i++ {
+		denIcicleArr = append(denIcicleArr, denI)
+	}
 
-	// domain.Generator
+	copyDenDone := make(chan bool, 1)
+	go func() {
+		denIcicleArrHost := (icicle_core.HostSlice[fr.Element])(denIcicleArr)
+		denIcicleArrHost.CopyToDevice(&pk.DenDevice, true)
+		copyDenDone <- true
+	}()
+
+	/*************************  Init Domain Device  ***************************/
+	ctx, err := icicle_cr.GetDefaultDeviceContext()
+	if err != icicle_cr.CudaSuccess {
+		panic("Couldn't create device context") // TODO
+	}
+
 	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	genBits := gen.Bits()
-	s.FromLimbs(core.ConvertUint64ArrToUint32Arr(genBits[:]))
-	bn254.InitDomain(s, ctx, false)
+	limbs := icicle_core.ConvertUint64ArrToUint32Arr(genBits[:])
+	pk.CosetGenerator = limbs
+	var rouIcicle icicle_bn254.ScalarField
+	rouIcicle.FromLimbs(limbs)
+	e := icicle_ntt.InitDomain(rouIcicle, ctx, false)
+	if e.IcicleErrorCode != icicle_core.IcicleSuccess {
+		panic("Couldn't initialize domain") // TODO
+	}
 
+	/*************************  End Init Domain Device  ***************************/
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
-	icicleA := iciclegnark.BatchConvertFromG1Affine(pk.G1.A)
-	pk.G1Device.A = core.HostSliceFromElements(icicleA)
-
+	copyADone := make(chan bool, 1)
+	go func() {
+		g1AHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.A)
+		g1AHost.CopyToDevice(&pk.G1Device.A, true)
+		copyADone <- true
+	}()
 	/*************************     B      ***************************/
-	icicleB := iciclegnark.BatchConvertFromG1Affine(pk.G1.B)
-	pk.G1Device.B = core.HostSliceFromElements(icicleB)
-
+	copyBDone := make(chan bool, 1)
+	go func() {
+		g1BHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.B)
+		g1BHost.CopyToDevice(&pk.G1Device.B, true)
+		copyBDone <- true
+	}()
 	/*************************     K      ***************************/
-	icicleK := iciclegnark.BatchConvertFromG1Affine(pk.G1.K)
-	pk.G1Device.K = core.HostSliceFromElements(icicleK)
-
+	copyKDone := make(chan bool, 1)
+	go func() {
+		g1KHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.K)
+		g1KHost.CopyToDevice(&pk.G1Device.K, true)
+		copyKDone <- true
+	}()
 	/*************************     Z      ***************************/
-	padding := make([]curve.G1Affine, 1)
-	// padding[0] = curve.G1Affine.generator()
-	Z_plus_point := append(pk.G1.Z, padding...)
-	icicleZ := iciclegnark.BatchConvertFromG1Affine(Z_plus_point)
-	pk.G1Device.Z = core.HostSliceFromElements(icicleZ)
-
+	copyZDone := make(chan bool, 1)
+	go func() {
+		g1ZHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.Z)
+		g1ZHost.CopyToDevice(&pk.G1Device.Z, true)
+		copyZDone <- true
+	}()
+	/*************************  End G1 Device Setup  ***************************/
+	<-copyDenDone
+	<-copyADone
+	<-copyBDone
+	<-copyKDone
+	<-copyZDone
 	/*************************  Start G2 Device Setup  ***************************/
-	icicleB2 := iciclegnark.BatchConvertFromG2Affine(pk.G2.B)
-	pk.G2Device.B = core.HostSliceFromElements(icicleB2)
+	copyG2BDone := make(chan bool, 1)
+	go func() {
+		g2BHost := (icicle_core.HostSlice[curve.G2Affine])(pk.G2.B)
+		g2BHost.CopyToDevice(&pk.G2Device.B, true)
+		copyG2BDone <- true
+	}()
 
-	fmt.Println("Size of domain: ", 2*pk.Domain.Cardinality, "; Size of points:", pk.G1Device.A.Len(), pk.G1Device.B.Len(), pk.G1Device.K.Len(), pk.G1Device.Z.Len(), pk.G2Device.B.Len())
-
-	lg.Info().Msg("end setupDevicePointers")
-
+	<-copyG2BDone
+	/*************************  End G2 Device Setup  ***************************/
 	return nil
+}
+
+func projectiveToGnarkAffine(p icicle_bn254.Projective) *curve.G1Affine {
+	px, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.X.ToBytesLittleEndian()))
+	py, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.Y.ToBytesLittleEndian()))
+	pz, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.Z.ToBytesLittleEndian()))
+
+	var x, y, zInv fp.Element
+
+	zInv.Inverse(&pz)
+	x.Mul(&px, &zInv)
+	y.Mul(&py, &zInv)
+
+	return &curve.G1Affine{X: x, Y: y}
+}
+
+func g1ProjectiveToG1Jac(p icicle_bn254.Projective) curve.G1Jac {
+	var p1 curve.G1Jac
+	p1.FromAffine(projectiveToGnarkAffine(p))
+
+	return p1
+}
+
+func toGnarkE2(f icicle_g2.G2BaseField) curve.E2 {
+	bytes := f.ToBytesLittleEndian()
+	a0, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(bytes[:fp.Bytes]))
+	a1, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(bytes[fp.Bytes:]))
+	return curve.E2{
+		A0: a0,
+		A1: a1,
+	}
+}
+
+func g2ProjectiveToG2Jac(p *icicle_g2.G2Projective) curve.G2Jac {
+	x := toGnarkE2(p.X)
+	y := toGnarkE2(p.Y)
+	z := toGnarkE2(p.Z)
+	var zSquared curve.E2
+	zSquared.Mul(&z, &z)
+
+	var X curve.E2
+	X.Mul(&x, &z)
+
+	var Y curve.E2
+	Y.Mul(&y, &zSquared)
+
+	return curve.G2Jac{
+		X: X,
+		Y: Y,
+		Z: z,
+	}
 }
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bn254.Proof, error) {
-	lg := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
-	lg.Info().Msg("start prove")
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new prover config: %w", err)
@@ -103,10 +192,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
-
-	err = pk.setupDevicePointers()
-	if err != nil {
-		return nil, err
+	if opt.Accelerator != "icicle" {
+		return groth16_bn254.Prove(r1cs, pk.ProvingKey, fullWitness, opts...)
+	}
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	if pk.deviceInfo == nil {
+		log.Debug().Msg("precomputing proving key in GPU")
+		if err := pk.setupDevicePointers(); err != nil {
+			return nil, fmt.Errorf("setup device pointers: %w", err)
+		}
 	}
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
@@ -147,13 +241,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}))
 
-	if r1cs.GkrInfo.Is() {
-		var gkrData cs.GkrSolvingData
-		solverOpts = append(solverOpts,
-			solver.OverrideHint(r1cs.GkrInfo.SolveHintID, cs.GkrSolveHint(r1cs.GkrInfo, &gkrData)),
-			solver.OverrideHint(r1cs.GkrInfo.ProveHintID, cs.GkrProveHint(r1cs.GkrInfo.HashName, &gkrData)))
-	}
-
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
 	if err != nil {
 		return nil, err
@@ -169,32 +256,29 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
 	}
 
-	var errPedersen error
-	chPedersenDone := make(chan struct{}, 1)
-	go func() {
-		// TODO: after the bottleneck of HostSlice creation is solved, this function that's currently executed on CPU
-		// might become the bottleneck, especially for relatively weak CPUs
-		if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
-			errPedersen = err
-		}
-
-		close(chPedersenDone)
-	}()
-	if errPedersen != nil {
-		return nil, errPedersen
+	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
+		return nil, err
 	}
 
-	stream, _ := cuda_runtime.CreateStream()
-	ctx, _ := cuda_runtime.GetDefaultDeviceContext()
-	ctx.Stream = &stream
+	// H (witness reduction / FFT part)
+	var h icicle_core.DeviceSlice
+	chHDone := make(chan struct{}, 1)
+	go func() {
+		h = computeH(solution.A, solution.B, solution.C, pk)
+
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		chHDone <- struct{}{}
+	}()
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var wireValuesA, wireValuesB, _wireValues []fr.Element
-	chWireValuesA, chWireValuesB, chWireValues := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+	var wireValuesADevice, wireValuesBDevice icicle_core.DeviceSlice
+	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	go func() {
-		wireValuesA = make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
 				continue
@@ -203,10 +287,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			j++
 		}
 
+		// Copy scalars to the device and retain ptr to them
+		wireValuesAHost := (icicle_core.HostSlice[fr.Element])(wireValuesA)
+		wireValuesAHost.CopyToDevice(&wireValuesADevice, true)
+
 		close(chWireValuesA)
 	}()
 	go func() {
-		wireValuesB = make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
 				continue
@@ -215,20 +303,12 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			j++
 		}
 
+		// Copy scalars to the device and retain ptr to them
+		wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
+		wireValuesBHost.CopyToDevice(&wireValuesBDevice, true)
+
 		close(chWireValuesB)
 	}()
-	go func() {
-		// filter the wire values if needed
-		// TODO Perf @Tabaie worst memory allocation offender
-		toRemove := commitmentInfo.GetPrivateCommitted()
-		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		_wireValues = filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
-
-		close(chWireValues)
-	}()
-
-	// H (witness reduction / FFT part)
-	h_device := computeHonDevice(solution.A, solution.B, solution.C, &pk.Domain, stream)
 
 	// sample random r and s
 	var r, s big.Int
@@ -249,102 +329,122 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	var bs1, ar curve.G1Jac
 
-	cfg := bn254.GetDefaultMSMConfig()
-	cfg.Ctx.Stream = &stream
-	cfg.IsAsync = true
+	computeBS1 := func() error {
+		<-chWireValuesB
 
-	outHost := make(core.HostSlice[bn254.Projective], 1)
-	var out core.DeviceSlice
-	out.MallocAsync(outHost.SizeOfElement(), outHost.SizeOfElement(), stream)
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		cfg.ArePointsMontgomeryForm = true
+		cfg.AreScalarsMontgomeryForm = true
+		res := make(icicle_core.HostSlice[icicle_bn254.Projective], 1)
+		icicle_msm.Msm(wireValuesBDevice, pk.G1Device.B, &cfg, res)
+		bs1 = g1ProjectiveToG1Jac(res[0])
 
-	<-chWireValuesB
-	wireValuesBhost := iciclegnark.HostSliceFromScalars(wireValuesB)
-	var wireValuesBdevice core.DeviceSlice
-	wireValuesBhost.CopyToDeviceAsync(&wireValuesBdevice, stream, true)
-	gerr := bn254.Msm(wireValuesBdevice, pk.G1Device.B, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM b: %v", gerr)
+		bs1.AddMixed(&pk.G1.Beta)
+		bs1.AddMixed(&deltas[1])
+
+		return nil
 	}
-	outHost.CopyFromDeviceAsync(&out, stream)
 
-	bs1 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-	bs1.AddMixed(&pk.G1.Beta)
-	bs1.AddMixed(&deltas[1])
+	computeAR1 := func() error {
+		<-chWireValuesA
 
-	// Bs2 (1 multi exp G2 - size = len(wires))
-	var Bs, deltaS curve.G2Jac
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		cfg.ArePointsMontgomeryForm = true
+		cfg.AreScalarsMontgomeryForm = true
+		res := make(icicle_core.HostSlice[icicle_bn254.Projective], 1)
+		icicle_msm.Msm(wireValuesADevice, pk.G1Device.A, &cfg, res)
+		ar = g1ProjectiveToG1Jac(res[0])
 
-	outHostG2 := make(core.HostSlice[bn254.G2Projective], 1)
-	var outG2 core.DeviceSlice
-	outG2.MallocAsync(outHostG2.SizeOfElement(), outHostG2.SizeOfElement(), stream)
-	gerr = bn254.G2Msm(wireValuesBdevice, pk.G2Device.B, &cfg, outG2)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM g2 b: %v", gerr)
+		ar.AddMixed(&pk.G1.Alpha)
+		ar.AddMixed(&deltas[0])
+		proof.Ar.FromJacobian(&ar)
+
+		return nil
 	}
-	outHostG2.CopyFromDeviceAsync(&outG2, stream)
-	outG2.FreeAsync(stream)
-	wireValuesBdevice.FreeAsync(stream)
 
-	Bs = *iciclegnark.G2PointToGnarkJac(&outHostG2[0])
+	computeKRS := func() error {
+		var krs, krs2, p1 curve.G1Jac
+		sizeH := int(pk.Domain.Cardinality - 1)
 
-	deltaS.FromAffine(&pk.G2.Delta)
-	deltaS.ScalarMultiplication(&deltaS, &s)
-	Bs.AddAssign(&deltaS)
-	Bs.AddMixed(&pk.G2.Beta)
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		cfg.ArePointsMontgomeryForm = true
+		cfg.AreScalarsMontgomeryForm = true
+		resKrs2 := make(icicle_core.HostSlice[icicle_bn254.Projective], 1)
+		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
 
-	proof.Bs.FromJacobian(&Bs)
+		// filter the wire values if needed
+		// TODO Perf @Tabaie worst memory allocation offender
+		toRemove := commitmentInfo.GetPrivateCommitted()
+		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		_wireValuesHost := (icicle_core.HostSlice[fr.Element])(_wireValues)
+		resKrs := make(icicle_core.HostSlice[icicle_bn254.Projective], 1)
+		icicle_msm.Msm(_wireValuesHost, pk.G1Device.K, &cfg, resKrs)
+		krs = g1ProjectiveToG1Jac(resKrs[0])
 
-	<-chWireValuesA
-	wireValuesAhost := iciclegnark.HostSliceFromScalars(wireValuesA)
-	gerr = bn254.Msm(wireValuesAhost, pk.G1Device.A, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM a: %v", gerr)
+		krs.AddMixed(&deltas[2])
+
+		krs.AddAssign(&krs2)
+
+		p1.ScalarMultiplication(&ar, &s)
+		krs.AddAssign(&p1)
+
+		p1.ScalarMultiplication(&bs1, &r)
+		krs.AddAssign(&p1)
+
+		proof.Krs.FromJacobian(&krs)
+
+		return nil
 	}
-	outHost.CopyFromDeviceAsync(&out, stream)
 
-	ar = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	computeBS2 := func() error {
+		// Bs2 (1 multi exp G2 - size = len(wires))
+		var Bs, deltaS curve.G2Jac
 
-	ar.AddMixed(&pk.G1.Alpha)
-	ar.AddMixed(&deltas[0])
-	proof.Ar.FromJacobian(&ar)
+		<-chWireValuesB
 
-	var krs, krs2, p1 curve.G1Jac
-	gerr = bn254.Msm(h_device, pk.G1Device.Z, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM z: %v", gerr)
+		cfg := icicle_g2.G2GetDefaultMSMConfig()
+		cfg.ArePointsMontgomeryForm = true
+		cfg.AreScalarsMontgomeryForm = true
+		res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
+		icicle_g2.G2Msm(wireValuesBDevice, pk.G2Device.B, &cfg, res)
+		Bs = g2ProjectiveToG2Jac(&res[0])
+
+		deltaS.FromAffine(&pk.G2.Delta)
+		deltaS.ScalarMultiplication(&deltaS, &s)
+		Bs.AddAssign(&deltaS)
+		Bs.AddMixed(&pk.G2.Beta)
+
+		proof.Bs.FromJacobian(&Bs)
+		return nil
 	}
-	outHost.CopyFromDeviceAsync(&out, stream)
-	h_device.FreeAsync(stream)
 
-	solution.A = nil
-	solution.B = nil
-	solution.C = nil
+	// wait for FFT to end
+	<-chHDone
 
-	krs2 = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
-
-	<-chWireValues
-	_wireValuesHost := iciclegnark.HostSliceFromScalars(_wireValues)
-	gerr = bn254.Msm(_wireValuesHost, pk.G1Device.K, &cfg, out)
-	if gerr != cuda_runtime.CudaSuccess {
-		return nil, fmt.Errorf("error in MSM k: %v", gerr)
+	// schedule our proof part computations
+	if err := computeAR1(); err != nil {
+		return nil, err
 	}
-	outHost.CopyFromDeviceAsync(&out, stream)
-	out.FreeAsync(stream)
+	if err := computeBS1(); err != nil {
+		return nil, err
+	}
+	if err := computeKRS(); err != nil {
+		return nil, err
+	}
+	if err := computeBS2(); err != nil {
+		return nil, err
+	}
 
-	krs = *iciclegnark.G1ProjectivePointToGnarkJac(&outHost[0])
+	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
-	krs.AddMixed(&deltas[2])
-	krs.AddAssign(&krs2)
-	p1.ScalarMultiplication(&ar, &s)
-	krs.AddAssign(&p1)
-	p1.ScalarMultiplication(&bs1, &r)
-	krs.AddAssign(&p1)
-
-	proof.Krs.FromJacobian(&krs)
-
-	<-chPedersenDone
-
-	lg.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	// free device/GPU memory that is not needed for future proofs (scalars/hpoly)
+	go func() {
+		wireValuesADevice.Free()
+		wireValuesBDevice.Free()
+		// h.Free()
+	}()
 
 	return proof, nil
 }
@@ -378,7 +478,7 @@ func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr
 	return
 }
 
-func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
+func computeH(a, b, c []fr.Element, pk *ProvingKey) icicle_core.DeviceSlice {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
 	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
@@ -388,103 +488,57 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
-	padding := make([]fr.Element, int(domain.Cardinality)-n)
+	padding := make([]fr.Element, int(pk.Domain.Cardinality)-n)
 	a = append(a, padding...)
 	b = append(b, padding...)
 	c = append(c, padding...)
 	n = len(a)
 
-	domain.FFTInverse(a, fft.DIF)
-	domain.FFTInverse(b, fft.DIF)
-	domain.FFTInverse(c, fft.DIF)
+	computeADone := make(chan icicle_core.DeviceSlice, 1)
+	computeBDone := make(chan icicle_core.DeviceSlice, 1)
+	computeCDone := make(chan icicle_core.DeviceSlice, 1)
 
-	domain.FFT(a, fft.DIT, fft.OnCoset())
-	domain.FFT(b, fft.DIT, fft.OnCoset())
-	domain.FFT(c, fft.DIT, fft.OnCoset())
-
-	var den, one fr.Element
-	one.SetOne()
-	den.Exp(domain.FrMultiplicativeGen, big.NewInt(int64(domain.Cardinality)))
-	den.Sub(&den, &one).Inverse(&den)
-
-	// h = ifft_coset(ca o cb - cc)
-	// reusing a to avoid unnecessary memory allocation
-	utils.Parallelize(n, func(start, end int) {
-		for i := start; i < end; i++ {
-			a[i].Mul(&a[i], &b[i]).
-				Sub(&a[i], &c[i]).
-				Mul(&a[i], &den)
-		}
-	})
-
-	// ifft_coset
-	domain.FFTInverse(a, fft.DIF, fft.OnCoset())
-
-	return a
-}
-
-func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runtime.Stream) core.DeviceSlice {
-	cosetGen, _ := fft.Generator(2 * domain.Cardinality)
-	cosetBits := cosetGen.Bits()
+	cosetGenBits := pk.Domain.FrMultiplicativeGen.Bits()
+	cosetGen := icicle_core.ConvertUint64ArrToUint32Arr(cosetGenBits[:])
 	var configCosetGen [8]uint32
-	configCosetGenRaw := core.ConvertUint64ArrToUint32Arr(cosetBits[:])
-	copy(configCosetGen[:], configCosetGenRaw[:8])
+	copy(configCosetGen[:], cosetGen[:8])
 
-	cfg := bn254.GetDefaultNttConfig()
-	cfg.IsAsync = true
-	cfg.Ctx.Stream = &stream
-
-	n := len(a)
-
-	padding := make([]fr.Element, int(domain.Cardinality)-n)
-	a = append(a, padding...)
-	b = append(b, padding...)
-	c = append(c, padding...)
-	n = len(a)
-	a_host := iciclegnark.HostSliceFromScalars(a)
-	b_host := iciclegnark.HostSliceFromScalars(b)
-	c_host := iciclegnark.HostSliceFromScalars(c)
-
-	var a_device core.DeviceSlice
-	var b_device core.DeviceSlice
-	var c_device core.DeviceSlice
-	a_host.CopyToDeviceAsync(&a_device, stream, true)
-	b_host.CopyToDeviceAsync(&b_device, stream, true)
-	c_host.CopyToDeviceAsync(&c_device, stream, true)
-
-	bn254.Ntt(a_device, core.KInverse, &cfg, a_device)
-	bn254.Ntt(b_device, core.KInverse, &cfg, b_device)
-	bn254.Ntt(c_device, core.KInverse, &cfg, c_device)
-
-	cfg.CosetGen = configCosetGen
-
-	bn254.Ntt(a_device, core.KForward, &cfg, a_device)
-	bn254.Ntt(b_device, core.KForward, &cfg, b_device)
-	bn254.Ntt(c_device, core.KForward, &cfg, c_device)
-
-	var den, one fr.Element
-	one.SetOne()
-	den.Exp(cosetGen, big.NewInt(int64(domain.Cardinality)))
-	den.Sub(&den, &one).Inverse(&den)
-	den_repeated := make([]fr.Element, n)
-	for i := 0; i < n; i++ {
-		den_repeated[i] = den
+	computeInttNttOnDevice := func(scalars []fr.Element, channel chan icicle_core.DeviceSlice) {
+		cfg := icicle_ntt.GetDefaultNttConfig()
+		scalarsStream, _ := icicle_cr.CreateStream()
+		cfg.Ctx.Stream = &scalarsStream
+		cfg.Ordering = icicle_core.KNR
+		cfg.IsAsync = true
+		scalarsHost := icicle_core.HostSliceFromElements(scalars)
+		var scalarsDevice icicle_core.DeviceSlice
+		scalarsHost.CopyToDeviceAsync(&scalarsDevice, scalarsStream, true)
+		icicle_ntt.Ntt(scalarsDevice, icicle_core.KInverse, &cfg, scalarsDevice)
+		cfg.Ordering = icicle_core.KRN
+		cfg.CosetGen = configCosetGen
+		icicle_ntt.Ntt(scalarsDevice, icicle_core.KForward, &cfg, scalarsDevice)
+		icicle_cr.SynchronizeStream(&scalarsStream)
+		channel <- scalarsDevice
 	}
-	den_host := iciclegnark.HostSliceFromScalars(den_repeated)
 
-	vcfg := core.DefaultVecOpsConfig()
-	vcfg.Ctx.Stream = &stream
+	go computeInttNttOnDevice(a, computeADone)
+	go computeInttNttOnDevice(b, computeBDone)
+	go computeInttNttOnDevice(c, computeCDone)
 
-	// h = ifft_coset(ca o cb - cc)
-	bn254.VecOp(a_device, b_device, a_device, vcfg, core.Mul)
-	bn254.VecOp(a_device, c_device, a_device, vcfg, core.Sub)
-	den_host.CopyToDeviceAsync(&b_device, stream, false)
-	bn254.VecOp(a_device, b_device, a_device, vcfg, core.Mul)
-	cfg.Ordering = core.KNR
+	aDevice := <-computeADone
+	bDevice := <-computeBDone
+	cDevice := <-computeCDone
 
-	// ifft_coset
-	bn254.Ntt(a_device, core.KInverse, &cfg, a_device)
-	b_device.FreeAsync(stream)
-	c_device.FreeAsync(stream)
-	return a_device
+	vecCfg := icicle_core.DefaultVecOpsConfig()
+	icicle_bn254.FromMontgomery(&aDevice)
+	icicle_vecops.VecOp(aDevice, bDevice, aDevice, vecCfg, icicle_core.Mul)
+	icicle_vecops.VecOp(aDevice, cDevice, aDevice, vecCfg, icicle_core.Sub)
+	icicle_bn254.FromMontgomery(&aDevice)
+	icicle_vecops.VecOp(aDevice, pk.DenDevice, aDevice, vecCfg, icicle_core.Mul)
+
+	cfg := icicle_ntt.GetDefaultNttConfig()
+	cfg.CosetGen = configCosetGen
+	cfg.Ordering = icicle_core.KNR
+	icicle_ntt.Ntt(aDevice, icicle_core.KInverse, &cfg, aDevice)
+
+	return aDevice
 }

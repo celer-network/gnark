@@ -12,8 +12,8 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/icza/bitio v1.1.0
-	github.com/ingonyama-zk/icicle v1.9.1
-	github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240329204201-5a05ea507886
+	github.com/ingonyama-zk/icicle/v2 v2.0.3
+	github.com/ingonyama-zk/iciclegnark v0.0.0
 	github.com/leanovate/gopter v0.2.9
 	github.com/rs/zerolog v1.30.0
 	github.com/stretchr/testify v1.9.0
@@ -33,3 +33,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/ingonyama-zk/iciclegnark => github.com/liuxiaobleach/iciclegnark v0.0.0-20240428031050-6b47980d5d73

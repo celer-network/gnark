@@ -1,6 +1,7 @@
 package testgpu
 
 import (
+	"github.com/consensys/gnark/backend"
 	"os"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestLargeCircuitInGpuOnBn254(t *testing.T) {
 	}
 	innerWitness, err := frontend.NewWitness(innerAssignment, field)
 	assert.NoError(err)
-	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness)
+	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration())
 	assert.NoError(err)
 	innerPubWitness, err := innerWitness.Public()
 	assert.NoError(err)
