@@ -78,7 +78,7 @@ func (pk *ProvingKey) setupDevicePointers() error {
 	pk.CosetGenerator = limbs
 	var rouIcicle icicle_bn254.ScalarField
 	rouIcicle.FromLimbs(limbs)
-	e := icicle_ntt.InitDomain(rouIcicle, ctx, false)
+	e := icicle_ntt.InitDomain(rouIcicle, ctx, true)
 	if e.IcicleErrorCode != icicle_core.IcicleSuccess {
 		panic("Couldn't initialize domain") // TODO
 	}
