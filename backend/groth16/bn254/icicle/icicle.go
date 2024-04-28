@@ -4,6 +4,7 @@ package icicle_bn254
 
 import (
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"math/big"
 	"sync"
 	"time"
@@ -428,6 +429,7 @@ func computeH(a, b, c []fr.Element, domain *fft.Domain) []fr.Element {
 }
 
 func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runtime.Stream) core.DeviceSlice {
+	start := time.Now()
 	cosetGen, _ := fft.Generator(2 * domain.Cardinality)
 	cosetBits := cosetGen.Bits()
 	var configCosetGen [8]uint32
@@ -493,5 +495,6 @@ func computeHonDevice(a, b, c []fr.Element, domain *fft.Domain, stream cuda_runt
 	ntt.Ntt(a_device, core.KInverse, &cfg, a_device)
 	b_device.FreeAsync(stream)
 	c_device.FreeAsync(stream)
+	log.Debug().Dur("took", time.Since(start)).Msg("computeH final")
 	return a_device
 }
