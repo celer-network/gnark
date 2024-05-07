@@ -6,17 +6,14 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
-	"runtime"
-	"sync"
+	"os"
 	"time"
-	"unsafe"
-
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/fft"
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/hash_to_field"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr/pedersen"
 	"github.com/consensys/gnark/backend"
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
@@ -25,59 +22,35 @@ import (
 	"github.com/consensys/gnark/constraint"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
 	"github.com/consensys/gnark/constraint/solver"
-	fcs "github.com/consensys/gnark/frontend/cs"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
-	iciclegnark "github.com/ingonyama-zk/iciclegnark/curves/bls12377"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
+	icicle_core "github.com/ingonyama-zk/icicle/v2/wrappers/golang/core"
+	icicle_cr "github.com/ingonyama-zk/icicle/v2/wrappers/golang/cuda_runtime"
+	icicle_bls12377 "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bls12377"
+	icicle_g2 "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bls12377/g2"
+	icicle_msm "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bls12377/msm"
+	icicle_ntt "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bls12377/ntt"
+	icicle_vecops "github.com/ingonyama-zk/icicle/v2/wrappers/golang/curves/bls12377/vecOps"
+
+	fcs "github.com/consensys/gnark/frontend/cs"
 )
 
 const HasIcicle = true
 
-func SetupDevicePointers(pk *ProvingKey) error {
-	// TODO, add lock here to make sure only init once
-	return pk.setupDevicePointers()
-}
-
-var (
-	setupDeviceLock sync.Mutex
-	gpuResourceLock sync.Mutex
-
-	solveLock sync.Mutex
-)
-
 func (pk *ProvingKey) setupDevicePointers() error {
-	setupDeviceLock.Lock()
-	defer setupDeviceLock.Unlock()
 	if pk.deviceInfo != nil {
 		return nil
 	}
-	runtime.GC()
 	pk.deviceInfo = &deviceInfo{}
-	n := int(pk.Domain.Cardinality)
-	sizeBytes := n * fr.Bytes
-
-	/*************************  Start Domain Device Setup  ***************************/
-	copyCosetInvDone := make(chan unsafe.Pointer, 1)
-	copyCosetDone := make(chan unsafe.Pointer, 1)
-	copyDenDone := make(chan unsafe.Pointer, 1)
-	/*************************     CosetTableInv      ***************************/
-	cti, err := pk.Domain.CosetTableInv()
-	if err != nil {
-		return err
-	}
-	go iciclegnark.CopyToDevice(cti, sizeBytes, copyCosetInvDone)
-
-	/*************************     CosetTable      ***************************/
-	ct, err := pk.Domain.CosetTable()
-	if err != nil {
-		return err
-	}
-	go iciclegnark.CopyToDevice(ct, sizeBytes, copyCosetDone)
-
+	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
 	/*************************     Den      ***************************/
+	n := int(pk.Domain.Cardinality)
 	var denI, oneI fr.Element
 	oneI.SetOne()
-	denI.Exp(pk.Domain.FrMultiplicativeGen, big.NewInt(int64(pk.Domain.Cardinality)))
+	denI.Exp(gen, big.NewInt(int64(pk.Domain.Cardinality)))
 	denI.Sub(&denI, &oneI).Inverse(&denI)
 
 	log2SizeFloor := bits.Len(uint(n)) - 1
@@ -90,78 +63,140 @@ func (pk *ProvingKey) setupDevicePointers() error {
 		denIcicleArr = append(denIcicleArr, denI)
 	}
 
-	go iciclegnark.CopyToDevice(denIcicleArr, sizeBytes, copyDenDone)
+	copyDenDone := make(chan bool, 1)
+	go func() {
+		denIcicleArrHost := (icicle_core.HostSlice[fr.Element])(denIcicleArr)
+		denIcicleArrHost.CopyToDevice(&pk.DenDevice, true)
+		icicle_bls12377.FromMontgomery(&pk.DenDevice)
+		copyDenDone <- true
+	}()
 
-	/*************************     Twiddles and Twiddles Inv    ***************************/
-	twiddlesInv_d_gen, twddles_err := iciclegnark.GenerateTwiddleFactors(n, true)
-	if twddles_err != nil {
-		return twddles_err
+	/*************************  Init Domain Device  ***************************/
+	ctx, err := icicle_cr.GetDefaultDeviceContext()
+	if err != icicle_cr.CudaSuccess {
+		panic("Couldn't create device context") // TODO
 	}
 
-	twiddles_d_gen, twddles_err := iciclegnark.GenerateTwiddleFactors(n, false)
-	if twddles_err != nil {
-		return twddles_err
+	genBits := gen.Bits()
+	limbs := icicle_core.ConvertUint64ArrToUint32Arr(genBits[:])
+	copy(pk.CosetGenerator[:], limbs[:fr.Limbs*2])
+	var rouIcicle icicle_bls12377.ScalarField
+	rouIcicle.FromLimbs(limbs)
+	e := icicle_ntt.InitDomain(rouIcicle, ctx, false)
+	if e.IcicleErrorCode != icicle_core.IcicleSuccess {
+		panic("Couldn't initialize domain") // TODO
 	}
 
-	/*************************  End Domain Device Setup  ***************************/
-	pk.DomainDevice.Twiddles = twiddles_d_gen
-	pk.DomainDevice.TwiddlesInv = twiddlesInv_d_gen
-
-	pk.DomainDevice.CosetTableInv = <-copyCosetInvDone
-	pk.DomainDevice.CosetTable = <-copyCosetDone
-	pk.DenDevice = <-copyDenDone
-
-	// free
-	pk.Domain = fft.Domain{Cardinality: pk.Domain.Cardinality}
-	runtime.GC()
+	/*************************  End Init Domain Device  ***************************/
 	/*************************  Start G1 Device Setup  ***************************/
 	/*************************     A      ***************************/
-	pointsBytesA := len(pk.G1.A) * fp.Bytes * 2
-	copyADone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.A, pointsBytesA, copyADone) // Make a function for points
-	pk.G1Device.A = <-copyADone
-	pk.G1.A = nil
-	runtime.GC()
+	copyADone := make(chan bool, 1)
+	go func() {
+		g1AHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.A)
+		g1AHost.CopyToDevice(&pk.G1Device.A, true)
+		log.Debug().Msg(fmt.Sprintf("pk.G1Device.A.Len() before: %d", pk.G1Device.A.Len()))
+		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.A)
+		log.Debug().Msg(fmt.Sprintf("pk.G1Device.A.Len() after: %d", pk.G1Device.A.Len()))
+		copyADone <- true
+	}()
 	/*************************     B      ***************************/
-	pointsBytesB := len(pk.G1.B) * fp.Bytes * 2
-	copyBDone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.B, pointsBytesB, copyBDone) // Make a function for points
-	pk.G1Device.B = <-copyBDone
-	pk.G1.B = nil
-	runtime.GC()
+	copyBDone := make(chan bool, 1)
+	go func() {
+		g1BHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.B)
+		g1BHost.CopyToDevice(&pk.G1Device.B, true)
+		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.B)
+		copyBDone <- true
+	}()
 	/*************************     K      ***************************/
-	var pointsNoInfinity []curve.G1Affine
-	for i, gnarkPoint := range pk.G1.K {
-		if gnarkPoint.IsInfinity() {
-			pk.InfinityPointIndicesK = append(pk.InfinityPointIndicesK, i)
-		} else {
-			pointsNoInfinity = append(pointsNoInfinity, gnarkPoint)
-		}
-	}
-
-	pointsBytesK := len(pointsNoInfinity) * fp.Bytes * 2
-	copyKDone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyPointsToDevice(pointsNoInfinity, pointsBytesK, copyKDone) // Make a function for points
-	pk.G1Device.K = <-copyKDone
-	pk.G1.K = nil
-	runtime.GC()
+	copyKDone := make(chan bool, 1)
+	go func() {
+		g1KHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.K)
+		g1KHost.CopyToDevice(&pk.G1Device.K, true)
+		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.K)
+		copyKDone <- true
+	}()
 	/*************************     Z      ***************************/
-	pointsBytesZ := len(pk.G1.Z) * fp.Bytes * 2
-	copyZDone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyPointsToDevice(pk.G1.Z, pointsBytesZ, copyZDone) // Make a function for points
-	pk.G1Device.Z = <-copyZDone
-	pk.G1.Z = make([]curve.G1Affine, 1)
-	runtime.GC()
+	copyZDone := make(chan bool, 1)
+	go func() {
+		g1ZHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.Z)
+		g1ZHost.CopyToDevice(&pk.G1Device.Z, true)
+		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.Z)
+		copyZDone <- true
+	}()
+	/*************************  End G1 Device Setup  ***************************/
+	<-copyDenDone
+	<-copyADone
+	<-copyBDone
+	<-copyKDone
+	<-copyZDone
 	/*************************  Start G2 Device Setup  ***************************/
-	pointsBytesB2 := len(pk.G2.B) * fp.Bytes * 4
-	copyG2BDone := make(chan unsafe.Pointer, 1)
-	go iciclegnark.CopyG2PointsToDevice(pk.G2.B, pointsBytesB2, copyG2BDone) // Make a function for points
-	pk.G2Device.B = <-copyG2BDone
-	pk.G2.B = nil
-	runtime.GC()
+	copyG2BDone := make(chan bool, 1)
+	go func() {
+		g2BHost := (icicle_core.HostSlice[curve.G2Affine])(pk.G2.B)
+		g2BHost.CopyToDevice(&pk.G2Device.B, true)
+		log.Debug().Msg(fmt.Sprintf("pk.G2Device.B.Len() before: %d", pk.G2Device.B.Len()))
+		icicle_g2.G2AffineFromMontgomery(&pk.G2Device.B)
+		log.Debug().Msg(fmt.Sprintf("pk.G2Device.B.Len() before: %d", pk.G2Device.B.Len()))
+		copyG2BDone <- true
+	}()
+
+	<-copyG2BDone
+	/*************************  End G2 Device Setup  ***************************/
 	return nil
 }
 
+func projectiveToGnarkAffine(p icicle_bls12377.Projective) *curve.G1Affine {
+	px, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.X.ToBytesLittleEndian()))
+	py, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.Y.ToBytesLittleEndian()))
+	pz, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(p.Z.ToBytesLittleEndian()))
+
+	var x, y, zInv fp.Element
+
+	zInv.Inverse(&pz)
+	x.Mul(&px, &zInv)
+	y.Mul(&py, &zInv)
+
+	return &curve.G1Affine{X: x, Y: y}
+}
+
+func g1ProjectiveToG1Jac(p icicle_bls12377.Projective) curve.G1Jac {
+	var p1 curve.G1Jac
+	p1.FromAffine(projectiveToGnarkAffine(p))
+
+	return p1
+}
+
+func toGnarkE2(f icicle_g2.G2BaseField) curve.E2 {
+	bytes := f.ToBytesLittleEndian()
+	a0, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(bytes[:fp.Bytes]))
+	a1, _ := fp.LittleEndian.Element((*[fp.Bytes]byte)(bytes[fp.Bytes:]))
+	return curve.E2{
+		A0: a0,
+		A1: a1,
+	}
+}
+
+func g2ProjectiveToG2Jac(p *icicle_g2.G2Projective) curve.G2Jac {
+	x := toGnarkE2(p.X)
+	y := toGnarkE2(p.Y)
+	z := toGnarkE2(p.Z)
+	var zSquared curve.E2
+	zSquared.Mul(&z, &z)
+
+	var X curve.E2
+	X.Mul(&x, &z)
+
+	var Y curve.E2
+	Y.Mul(&y, &zSquared)
+
+	return curve.G2Jac{
+		X: X,
+		Y: Y,
+		Z: z,
+	}
+}
+
+// Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	opt, err := backend.NewProverConfig(opts...)
 	if err != nil {
@@ -171,9 +206,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
 	if opt.Accelerator != "icicle" {
-		return groth16_bls12377.Prove(r1cs, pk.ProvingKey, fullWitness, opts...)
+		return groth16_bls12377.Prove(r1cs, &pk.ProvingKey, fullWitness, opts...)
 	}
-
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	if pk.deviceInfo == nil {
 		log.Debug().Msg("precomputing proving key in GPU")
@@ -181,6 +215,8 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 			return nil, fmt.Errorf("setup device pointers: %w", err)
 		}
 	}
+
+	_, isProfile := os.LookupEnv("profile")
 
 	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
 
@@ -220,23 +256,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}))
 
-	if r1cs.GkrInfo.Is() {
-		var gkrData cs.GkrSolvingData
-		solverOpts = append(solverOpts,
-			solver.OverrideHint(r1cs.GkrInfo.SolveHintID, cs.GkrSolveHint(r1cs.GkrInfo, &gkrData)),
-			solver.OverrideHint(r1cs.GkrInfo.ProveHintID, cs.GkrProveHint(r1cs.GkrInfo.HashName, &gkrData)))
-	}
-
-	//solveLock.Lock()
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
 	if err != nil {
-		//solveLock.Unlock()
 		return nil, err
 	}
-	//solveLock.Unlock()
 
 	solution := _solution.(*cs.R1CSSolution)
 	wireValues := []fr.Element(solution.W)
+
+	start := time.Now()
 
 	commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
 	for i := range commitmentInfo {
@@ -247,7 +275,58 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	// TODO parall?
+	// H (witness reduction / FFT part)
+	var h icicle_core.DeviceSlice
+	chHDone := make(chan struct{}, 1)
+	go func() {
+		h = computeH(solution.A, solution.B, solution.C, pk, log)
+
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		chHDone <- struct{}{}
+	}()
+
+	// we need to copy and filter the wireValues for each multi exp
+	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
+	var wireValuesADevice, wireValuesBDevice icicle_core.DeviceSlice
+	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
+
+	go func() {
+		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+		for i, j := 0, 0; j < len(wireValuesA); i++ {
+			if pk.InfinityA[i] {
+				continue
+			}
+			wireValuesA[j] = wireValues[i]
+			j++
+		}
+
+		// Copy scalars to the device and retain ptr to them
+		wireValuesAHost := (icicle_core.HostSlice[fr.Element])(wireValuesA)
+		wireValuesAHost.CopyToDevice(&wireValuesADevice, true)
+		icicle_bls12377.FromMontgomery(&wireValuesADevice)
+
+		close(chWireValuesA)
+	}()
+	go func() {
+		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+		for i, j := 0, 0; j < len(wireValuesB); i++ {
+			if pk.InfinityB[i] {
+				continue
+			}
+			wireValuesB[j] = wireValues[i]
+			j++
+		}
+
+		// Copy scalars to the device and retain ptr to them
+		wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
+		wireValuesBHost.CopyToDevice(&wireValuesBDevice, true)
+		icicle_bls12377.FromMontgomery(&wireValuesBDevice)
+
+		close(chWireValuesB)
+	}()
+
 	// sample random r and s
 	var r, s big.Int
 	var _r, _s, _kr fr.Element
@@ -265,84 +344,19 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	// computes r[δ], s[δ], kr[δ]
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 
-	gpuResourceLock.Lock()
-	defer gpuResourceLock.Unlock()
-
-	start := time.Now()
-	// H (witness reduction / FFT part)
-	var h unsafe.Pointer
-	chHDone := make(chan struct{}, 1)
-	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk)
-		solution.A = nil
-		solution.B = nil
-		solution.C = nil
-		chHDone <- struct{}{}
-	}()
-
-	// we need to copy and filter the wireValues for each multi exp
-	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var wireValuesADevice, wireValuesBDevice iciclegnark.OnDeviceData
-	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
-
-	go func() {
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
-		for i, j := 0, 0; j < len(wireValuesA); i++ {
-			if pk.InfinityA[i] {
-				continue
-			}
-			wireValuesA[j] = wireValues[i]
-			j++
-		}
-		wireValuesASize := len(wireValuesA)
-		scalarBytes := wireValuesASize * fr.Bytes
-
-		// Copy scalars to the device and retain ptr to them
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(wireValuesA, scalarBytes, copyDone)
-		wireValuesADevicePtr := <-copyDone
-
-		wireValuesADevice = iciclegnark.OnDeviceData{
-			P:    wireValuesADevicePtr,
-			Size: wireValuesASize,
-		}
-
-		close(chWireValuesA)
-	}()
-
-	go func() {
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
-		for i, j := 0, 0; j < len(wireValuesB); i++ {
-			if pk.InfinityB[i] {
-				continue
-			}
-			wireValuesB[j] = wireValues[i]
-			j++
-		}
-		wireValuesBSize := len(wireValuesB)
-		scalarBytes := wireValuesBSize * fr.Bytes
-
-		// Copy scalars to the device and retain ptr to them
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(wireValuesB, scalarBytes, copyDone)
-		wireValuesBDevicePtr := <-copyDone
-
-		wireValuesBDevice = iciclegnark.OnDeviceData{
-			P:    wireValuesBDevicePtr,
-			Size: wireValuesBSize,
-		}
-
-		close(chWireValuesB)
-	}()
-
 	var bs1, ar curve.G1Jac
 
 	computeBS1 := func() error {
 		<-chWireValuesB
 
-		if bs1, _, err = iciclegnark.MsmOnDevice(wireValuesBDevice.P, pk.G1Device.B, wireValuesBDevice.Size, true); err != nil {
-			return err
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+		icicle_msm.Msm(wireValuesBDevice, pk.G1Device.B, &cfg, res)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs1")
 		}
+		bs1 = g1ProjectiveToG1Jac(res[0])
 
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
@@ -353,9 +367,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	computeAR1 := func() error {
 		<-chWireValuesA
 
-		if ar, _, err = iciclegnark.MsmOnDevice(wireValuesADevice.P, pk.G1Device.A, wireValuesADevice.Size, true); err != nil {
-			return err
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+		icicle_msm.Msm(wireValuesADevice, pk.G1Device.A, &cfg, res)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("MSM Ar1")
 		}
+		ar = g1ProjectiveToG1Jac(res[0])
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
@@ -366,36 +385,36 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 	computeKRS := func() error {
 		var krs, krs2, p1 curve.G1Jac
-		sizeH := int(pk.Domain.Cardinality - 1) // comes from the fact the deg(H)=(n-1)+(n-1)-n=n-2
+		sizeH := int(pk.Domain.Cardinality - 1)
 
-		// check for small circuits as iciclegnark doesn't handle zero sizes well
-		if len(pk.G1.Z) > 0 {
-			if krs2, _, err = iciclegnark.MsmOnDevice(h, pk.G1Device.Z, sizeH, true); err != nil {
-				return err
-			}
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		}
+		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
 
 		// filter the wire values if needed
 		// TODO Perf @Tabaie worst memory allocation offender
 		toRemove := commitmentInfo.GetPrivateCommitted()
 		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		scalars := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+		log.Debug().Msg(fmt.Sprintf("_wireValues fr len: %d", len(_wireValues)))
+		_wireValuesHost := (icicle_core.HostSlice[fr.Element])(_wireValues)
 
-		// filter zero/infinity points since icicle doesn't handle them
-		// See https://github.com/ingonyama-zk/icicle/issues/169 for more info
-		scalars = filterHeap(scalars, 0, pk.InfinityPointIndicesK)
-		scalarBytes := len(scalars) * fr.Bytes
+		var wireValuesDevice icicle_core.DeviceSlice
+		_wireValuesHost.CopyToDevice(&wireValuesDevice, true)
+		icicle_bls12377.FromMontgomery(&wireValuesDevice)
 
-		copyDone := make(chan unsafe.Pointer, 1)
-		iciclegnark.CopyToDevice(scalars, scalarBytes, copyDone)
-		scalars_d := <-copyDone
-
-		krs, _, err = iciclegnark.MsmOnDevice(scalars_d, pk.G1Device.K, len(scalars), true)
-		iciclegnark.FreeDevicePointer(scalars_d)
-
-		if err != nil {
-			return err
+		resKrs := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start = time.Now()
+		icicle_msm.Msm(wireValuesDevice, pk.G1Device.K, &cfg, resKrs)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs")
 		}
+		krs = g1ProjectiveToG1Jac(resKrs[0])
 
 		krs.AddMixed(&deltas[2])
 
@@ -409,6 +428,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 
 		proof.Krs.FromJacobian(&krs)
 
+		wireValuesDevice.Free()
 		return nil
 	}
 
@@ -417,9 +437,15 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		var Bs, deltaS curve.G2Jac
 
 		<-chWireValuesB
-		if Bs, _, err = iciclegnark.MsmG2OnDevice(wireValuesBDevice.P, pk.G2Device.B, wireValuesBDevice.Size, true); err != nil {
-			return err
+
+		cfg := icicle_g2.G2GetDefaultMSMConfig()
+		res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
+		start := time.Now()
+		icicle_g2.G2Msm(wireValuesBDevice, pk.G2Device.B, &cfg, res)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs2 G2")
 		}
+		Bs = g2ProjectiveToG2Jac(&res[0])
 
 		deltaS.FromAffine(&pk.G2.Delta)
 		deltaS.ScalarMultiplication(&deltaS, &s)
@@ -437,32 +463,30 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if err := computeAR1(); err != nil {
 		return nil, err
 	}
+	wireValuesADevice.Free()
 	if err := computeBS1(); err != nil {
-		return nil, err
-	}
-	if err := computeKRS(); err != nil {
 		return nil, err
 	}
 	if err := computeBS2(); err != nil {
 		return nil, err
 	}
+	wireValuesBDevice.Free()
+	if err := computeKRS(); err != nil {
+		return nil, err
+	}
+	h.Free()
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
 	// free device/GPU memory that is not needed for future proofs (scalars/hpoly)
-	/*go func() {
-		iciclegnark.FreeDevicePointer(wireValuesADevice.P)
-		iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
-		iciclegnark.FreeDevicePointer(h)
-	}()*/
-	// for mem safe
-	iciclegnark.FreeDevicePointer(wireValuesADevice.P)
-	iciclegnark.FreeDevicePointer(wireValuesBDevice.P)
-	iciclegnark.FreeDevicePointer(h)
 
 	return proof, nil
 }
 
+// if len(toRemove) == 0, returns slice
+// else, returns a new slice without the indexes in toRemove. The first value in the slice is taken as indexes as sliceFirstIndex
+// this assumes len(slice) > len(toRemove)
+// filterHeap modifies toRemove
 func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr.Element) {
 
 	if len(toRemove) == 0 {
@@ -488,7 +512,14 @@ func filterHeap(slice []fr.Element, sliceFirstIndex int, toRemove []int) (r []fr
 	return
 }
 
-func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
+func computeH(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) icicle_core.DeviceSlice {
+	// H part of Krs
+	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))
+	// 	1 - _a = ifft(a), _b = ifft(b), _c = ifft(c)
+	// 	2 - ca = fft_coset(_a), ba = fft_coset(_b), cc = fft_coset(_c)
+	// 	3 - h = ifft_coset(ca o cb - cc)
+	_, isProfile := os.LookupEnv("profile")
+	startTotal := time.Now()
 	n := len(a)
 
 	// add padding to ensure input length is domain cardinality
@@ -498,46 +529,63 @@ func computeH(a, b, c []fr.Element, pk *ProvingKey) unsafe.Pointer {
 	c = append(c, padding...)
 	n = len(a)
 
-	sizeBytes := n * fr.Bytes
+	computeADone := make(chan icicle_core.DeviceSlice, 1)
+	computeBDone := make(chan icicle_core.DeviceSlice, 1)
+	computeCDone := make(chan icicle_core.DeviceSlice, 1)
 
-	/*********** Copy a,b,c to Device Start ************/
-	// Individual channels are necessary to know which device pointers
-	// point to which vector
-	copyADone := make(chan unsafe.Pointer, 1)
-	copyBDone := make(chan unsafe.Pointer, 1)
-	copyCDone := make(chan unsafe.Pointer, 1)
-
-	go iciclegnark.CopyToDevice(a, sizeBytes, copyADone)
-	go iciclegnark.CopyToDevice(b, sizeBytes, copyBDone)
-	go iciclegnark.CopyToDevice(c, sizeBytes, copyCDone)
-
-	a_device := <-copyADone
-	b_device := <-copyBDone
-	c_device := <-copyCDone
-	/*********** Copy a,b,c to Device End ************/
-
-	computeInttNttDone := make(chan error, 1)
-	computeInttNttOnDevice := func(devicePointer unsafe.Pointer) {
-		iciclegnark.INttOnDevice(devicePointer, pk.DomainDevice.TwiddlesInv, nil, n, sizeBytes, false)
-
-		iciclegnark.NttOnDevice(devicePointer, devicePointer, pk.DomainDevice.Twiddles, pk.DomainDevice.CosetTable, n, n, sizeBytes, true)
-
-		computeInttNttDone <- nil
+	computeInttNttOnDevice := func(scalars []fr.Element, channel chan icicle_core.DeviceSlice) {
+		cfg := icicle_ntt.GetDefaultNttConfig()
+		scalarsStream, _ := icicle_cr.CreateStream()
+		cfg.Ctx.Stream = &scalarsStream
+		cfg.Ordering = icicle_core.KNM
+		cfg.IsAsync = true
+		scalarsHost := icicle_core.HostSliceFromElements(scalars)
+		var scalarsDevice icicle_core.DeviceSlice
+		scalarsHost.CopyToDeviceAsync(&scalarsDevice, scalarsStream, true)
+		start := time.Now()
+		icicle_ntt.Ntt(scalarsDevice, icicle_core.KInverse, &cfg, scalarsDevice)
+		cfg.Ordering = icicle_core.KMN
+		cfg.CosetGen = pk.CosetGenerator
+		icicle_ntt.Ntt(scalarsDevice, icicle_core.KForward, &cfg, scalarsDevice)
+		icicle_cr.SynchronizeStream(&scalarsStream)
+		if isProfile {
+			log.Debug().Dur("took", time.Since(start)).Msg("computeH: NTT + INTT")
+		}
+		channel <- scalarsDevice
 	}
-	go computeInttNttOnDevice(a_device)
-	go computeInttNttOnDevice(b_device)
-	go computeInttNttOnDevice(c_device)
-	_, _, _ = <-computeInttNttDone, <-computeInttNttDone, <-computeInttNttDone
 
-	iciclegnark.PolyOps(a_device, b_device, c_device, pk.DenDevice, n)
+	go computeInttNttOnDevice(a, computeADone)
+	go computeInttNttOnDevice(b, computeBDone)
+	go computeInttNttOnDevice(c, computeCDone)
 
-	iciclegnark.INttOnDevice(a_device, pk.DomainDevice.TwiddlesInv, pk.DomainDevice.CosetTableInv, n, sizeBytes, true)
+	aDevice := <-computeADone
+	bDevice := <-computeBDone
+	cDevice := <-computeCDone
 
-	go func() {
-		iciclegnark.FreeDevicePointer(b_device)
-		iciclegnark.FreeDevicePointer(c_device)
-	}()
+	vecCfg := icicle_core.DefaultVecOpsConfig()
+	start := time.Now()
+	icicle_bls12377.FromMontgomery(&aDevice)
+	icicle_vecops.VecOp(aDevice, bDevice, aDevice, vecCfg, icicle_core.Mul)
+	icicle_vecops.VecOp(aDevice, cDevice, aDevice, vecCfg, icicle_core.Sub)
+	icicle_vecops.VecOp(aDevice, pk.DenDevice, aDevice, vecCfg, icicle_core.Mul)
+	if isProfile {
+		log.Debug().Dur("took", time.Since(start)).Msg("computeH: vecOps")
+	}
+	defer bDevice.Free()
+	defer cDevice.Free()
 
-	iciclegnark.ReverseScalars(a_device, n)
-	return a_device
+	cfg := icicle_ntt.GetDefaultNttConfig()
+	cfg.CosetGen = pk.CosetGenerator
+	cfg.Ordering = icicle_core.KNR
+	start = time.Now()
+	icicle_ntt.Ntt(aDevice, icicle_core.KInverse, &cfg, aDevice)
+	if isProfile {
+		log.Debug().Dur("took", time.Since(start)).Msg("computeH: INTT final")
+	}
+	icicle_bls12377.FromMontgomery(&aDevice)
+
+	if isProfile {
+		log.Debug().Dur("took", time.Since(startTotal)).Msg("computeH: Total")
+	}
+	return aDevice
 }
