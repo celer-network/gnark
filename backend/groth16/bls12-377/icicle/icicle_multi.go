@@ -519,7 +519,6 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) 
 	cfg := icicle_ntt.GetDefaultNttConfig()
 	cfg.CosetGen = pk.CosetGenerator
 	cfg.Ordering = icicle_core.KNR
-	start = time.Now()
 	icicle_ntt.Ntt(aDevice, icicle_core.KInverse, &cfg, aDevice)
 	icicle_bls12377.FromMontgomery(&aDevice)
 	return aDevice
