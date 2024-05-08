@@ -398,8 +398,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		hOnHost.CopyFromDevice(&hc)
 		var hc2 icicle_core.DeviceSlice
 		hOnHost.CopyToDevice(&hc2, true)
-		h.Free()
-		hc.Free()
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
@@ -407,8 +405,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		icicle_msm.Msm(hc2, pk.G1Device.Z, &cfg, resKrs2)
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
-
-		hc2.Free()
 
 		return nil
 	}
