@@ -147,6 +147,8 @@ func (pk *ProvingKey) setupDevicePointersOnMulti() error {
 	return nil
 }
 
+const testsleep = 3
+
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
@@ -251,6 +253,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		chHDone <- struct{}{}
 	}()
 
+	log.Debug().Msg("go computeHOnDevice")
+	time.Sleep(testsleep * time.Second)
+
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesADevice, wireValuesBDevice, wireValuesBDeviceForG2 icicle_core.DeviceSlice
@@ -273,6 +278,10 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 		close(chWireValuesA)
 	})
+
+	log.Debug().Msg("go wireValuesAHost")
+	time.Sleep(testsleep * time.Second)
+
 	icicle_cr.RunOnDevice(device3, func(args ...any) {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
@@ -291,6 +300,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		close(chWireValuesB)
 	})
 
+	log.Debug().Msg("go wireValuesBHost")
+	time.Sleep(testsleep * time.Second)
+
 	icicle_cr.RunOnDevice(device2, func(args ...any) {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
@@ -308,6 +320,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 		close(chWireValuesBForG2)
 	})
+
+	log.Debug().Msg("go wireValuesBDeviceForG2")
+	time.Sleep(testsleep * time.Second)
 
 	var bs1, ar curve.G1Jac
 
@@ -420,26 +435,42 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	icicle_cr.RunOnDevice(device2, func(args ...any) {
 		BS2Done <- computeBS2()
 	})
+
+	log.Debug().Msg("go computeBS2")
+	time.Sleep(testsleep * time.Second)
+
 	// schedule our proof part computations
 	arDone := make(chan error, 1)
 	icicle_cr.RunOnDevice(device1, func(args ...any) {
 		arDone <- computeAR1()
 	})
 
+	log.Debug().Msg("go computeAR1")
+	time.Sleep(testsleep * time.Second)
+
 	BS1Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(device3, func(args ...any) {
 		BS1Done <- computeBS1()
 	})
+
+	log.Debug().Msg("go computeBS1")
+	time.Sleep(testsleep * time.Second)
 
 	KrsDone := make(chan error, 1)
 	icicle_cr.RunOnDevice(device4, func(args ...any) {
 		KrsDone <- computeKrs()
 	})
 
+	log.Debug().Msg("go computeKrs")
+	time.Sleep(testsleep * time.Second)
+
 	Krs2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(device0, func(args ...any) {
 		Krs2Done <- computeKrs2()
 	})
+
+	log.Debug().Msg("go computeKrs2")
+	time.Sleep(testsleep * time.Second)
 
 	<-KrsDone
 	<-Krs2Done
