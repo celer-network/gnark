@@ -318,11 +318,12 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
 		icicle_msm.Msm(wireValuesBDevice, pk.G1Device.B, &cfg, res)
-		wireValuesBDevice.Free()
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs1")
 		bs1 = g1ProjectiveToG1Jac(res[0])
 		bs1.AddMixed(&pk.G1.Beta)
 		bs1.AddMixed(&deltas[1])
+
+		wireValuesBDevice.Free()
 
 		return nil
 	}
@@ -334,13 +335,14 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
 		icicle_msm.Msm(wireValuesADevice, pk.G1Device.A, &cfg, res)
-		wireValuesADevice.Free()
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Ar1")
 		ar = g1ProjectiveToG1Jac(res[0])
 
 		ar.AddMixed(&pk.G1.Alpha)
 		ar.AddMixed(&deltas[0])
 		proof.Ar.FromJacobian(&ar)
+
+		wireValuesADevice.Free()
 
 		return nil
 	}
@@ -363,9 +365,11 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		cfg.AreScalarsMontgomeryForm = true
 		start := time.Now()
 		icicle_msm.Msm(wireValuesDevice, pk.G1Device.K, &cfg, resKrs)
-		wireValuesDevice.Free()
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs")
 		krs = g1ProjectiveToG1Jac(resKrs[0])
+
+		wireValuesDevice.Free()
+
 		return nil
 	}
 
@@ -379,9 +383,10 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
 		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
-		h.Free()
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+
+		h.Free()
 
 		return nil
 	}
@@ -396,7 +401,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
 		start := time.Now()
 		icicle_g2.G2Msm(wireValuesBDeviceForG2, pk.G2Device.B, &cfg, res)
-		wireValuesBDeviceForG2.Free()
+
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs2 G2")
 		Bs = g2ProjectiveToG2Jac(&res[0])
 
@@ -406,6 +411,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		Bs.AddMixed(&pk.G2.Beta)
 
 		proof.Bs.FromJacobian(&Bs)
+
+		wireValuesBDeviceForG2.Free()
+
 		return nil
 	}
 
@@ -435,21 +443,22 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	<-KrsDone
+	<-Krs2Done
+	<-BS2Done
+	<-arDone
+	<-BS1Done
+
 	krs.AddMixed(&deltas[2])
 
-	<-Krs2Done
 	krs.AddAssign(&krs2)
 
-	<-arDone
 	p1.ScalarMultiplication(&ar, &s)
 	krs.AddAssign(&p1)
 
-	<-BS1Done
 	p1.ScalarMultiplication(&bs1, &r)
 	krs.AddAssign(&p1)
 
 	proof.Krs.FromJacobian(&krs)
-	<-BS2Done
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 	return proof, nil
