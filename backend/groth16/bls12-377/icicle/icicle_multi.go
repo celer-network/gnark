@@ -393,13 +393,14 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		// TODO wait h done
 		sizeH := int(pk.Domain.Cardinality - 1)
 
+		hc := h.RangeTo(sizeH, false)
 		hOnHost := make(icicle_core.HostSlice[fr.Element], sizeH)
-		hOnHost.CopyFromDevice(&h)
+		hOnHost.CopyFromDevice(&hc)
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
-		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		icicle_msm.Msm(hc, pk.G1Device.Z, &cfg, resKrs2)
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
 
