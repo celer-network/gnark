@@ -393,6 +393,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		// TODO wait h done
 		sizeH := int(pk.Domain.Cardinality - 1)
 
+		hOnHost := make(icicle_core.HostSlice[fr.Element], sizeH)
+		hOnHost.CopyFromDevice(&h)
+
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
@@ -560,5 +563,6 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) 
 	cfg.Ordering = icicle_core.KNR
 	icicle_ntt.Ntt(aDevice, icicle_core.KInverse, &cfg, aDevice)
 	icicle_bls12377.FromMontgomery(&aDevice)
+
 	return aDevice
 }
