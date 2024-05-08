@@ -477,7 +477,6 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) 
 
 	computeInttNttOnDevice := func(scalars []fr.Element, channel chan icicle_core.DeviceSlice) {
 		cfg := icicle_ntt.GetDefaultNttConfig()
-		log.Debug().Msg(fmt.Sprintf("computeInttNttOnDevice: deviceId:%d", cfg.Ctx.GetDeviceId()))
 		scalarsStream, _ := icicle_cr.CreateStream()
 		cfg.Ctx.Stream = &scalarsStream
 		cfg.Ordering = icicle_core.KNM
@@ -510,13 +509,10 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) 
 	cDevice := <-computeCDone
 
 	vecCfg := icicle_core.DefaultVecOpsConfig()
-	start := time.Now()
 	icicle_bls12377.FromMontgomery(&aDevice)
 	icicle_vecops.VecOp(aDevice, bDevice, aDevice, vecCfg, icicle_core.Mul)
 	icicle_vecops.VecOp(aDevice, cDevice, aDevice, vecCfg, icicle_core.Sub)
 	icicle_vecops.VecOp(aDevice, pk.DenDevice, aDevice, vecCfg, icicle_core.Mul)
-	log.Debug().Dur("took", time.Since(start)).Msg("computeH: vecOps")
-
 	defer bDevice.Free()
 	defer cDevice.Free()
 
@@ -525,7 +521,6 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger) 
 	cfg.Ordering = icicle_core.KNR
 	start = time.Now()
 	icicle_ntt.Ntt(aDevice, icicle_core.KInverse, &cfg, aDevice)
-	log.Debug().Dur("took", time.Since(start)).Msg("computeH: INTT final")
 	icicle_bls12377.FromMontgomery(&aDevice)
 	return aDevice
 }
