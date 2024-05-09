@@ -147,8 +147,6 @@ func (pk *ProvingKey) setupDevicePointersOnMulti() error {
 	return nil
 }
 
-const testsleep = 3
-
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
@@ -478,22 +476,20 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	log.Debug().Msg("go computeKrs2")
 
 	<-KrsDone
-	<-Krs2Done
-	<-BS2Done
-	<-arDone
-	<-BS1Done
-
 	krs.AddMixed(&deltas[2])
-
+	<-Krs2Done
 	krs.AddAssign(&krs2)
 
+	<-arDone
 	p1.ScalarMultiplication(&ar, &s)
 	krs.AddAssign(&p1)
 
+	<-BS1Done
 	p1.ScalarMultiplication(&bs1, &r)
 	krs.AddAssign(&p1)
-
 	proof.Krs.FromJacobian(&krs)
+
+	<-BS2Done
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 	return proof, nil
