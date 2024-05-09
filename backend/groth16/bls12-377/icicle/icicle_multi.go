@@ -394,7 +394,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		sizeH := int(pk.Domain.Cardinality - 1)
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
-		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		//resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
 
 		hc2_1 := h.Range(0, sizeH/2, false)
