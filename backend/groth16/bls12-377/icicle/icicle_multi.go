@@ -429,7 +429,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		var hc2 icicle_core.DeviceSlice
 		hOnHost.CopyToDevice(&hc2, true)
 		icicle_bls12377.FromMontgomery(&hc2)
-		h.Free()
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
@@ -441,6 +440,24 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 		log.Debug().Msg(fmt.Sprintf("krs2 is equal: %v", krs2.Equal(&krs2_cpu)))
 
+		var krs2_gpu_add *curve.G1Jac
+
+		hc2_1 := hc2.Range(0, sizeH/2, false)
+		hc2_2 := hc2.Range(sizeH/2, sizeH, false)
+
+		resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
+		icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH, false), &cfg, resKrs2_2)
+
+		krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
+		krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
+
+		krs2_gpu_add = krs2_gpu_1.AddAssign(&krs2_gpu_2)
+
+		log.Debug().Msg(fmt.Sprintf("krs2_gpu_add is equal: %v", krs2_cpu.Equal(krs2_gpu_add)))
+
+		h.Free()
 		return nil
 	}
 
