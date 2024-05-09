@@ -406,6 +406,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		}
 
 		var krs2_cpu_1, krs2_cpu_2 curve.G1Jac
+		var krs2_cpu_add *curve.G1Jac
 
 		_, err = krs2_cpu.MultiExp(pk.G1.Z, h_in_cpu, ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
 		if err != nil {
@@ -421,6 +422,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		if err != nil {
 			return err
 		}
+
+		krs2_cpu_add = krs2_cpu_1.AddAssign(&krs2_cpu_2)
+		log.Debug().Msg(fmt.Sprintf("krs2_cpu_1 + krs2_cpu_2 is equal: %v", krs2_cpu_add.Equal(&krs2_cpu)))
 
 		var hc2 icicle_core.DeviceSlice
 		hOnHost.CopyToDevice(&hc2, true)
