@@ -396,9 +396,23 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
-		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+
+		hc2_1 := h.Range(0, sizeH/2, false)
+		hc2_2 := h.Range(sizeH/2, sizeH, false)
+		resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+
+		icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
+		icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH-1, true), &cfg, resKrs2_2)
+
+		krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
+		krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
+
+		krs2_gpu_add := krs2_gpu_1.AddAssign(&krs2_gpu_2)
+		krs2 = *krs2_gpu_add
+		//icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
-		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+		//krs2 = g1ProjectiveToG1Jac(resKrs2[0])
 
 		h.Free()
 
