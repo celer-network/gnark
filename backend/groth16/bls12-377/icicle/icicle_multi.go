@@ -147,8 +147,6 @@ func (pk *ProvingKey) setupDevicePointersOnMulti() error {
 	return nil
 }
 
-const testsleep = 3
-
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
@@ -254,7 +252,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	}()
 
 	log.Debug().Msg("go computeHOnDevice")
-	time.Sleep(testsleep * time.Second)
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -280,7 +277,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go wireValuesAHost")
-	time.Sleep(testsleep * time.Second)
 
 	icicle_cr.RunOnDevice(device3, func(args ...any) {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
@@ -301,7 +297,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go wireValuesBHost")
-	time.Sleep(testsleep * time.Second)
 
 	icicle_cr.RunOnDevice(device2, func(args ...any) {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
@@ -322,7 +317,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go wireValuesBDeviceForG2")
-	time.Sleep(testsleep * time.Second)
 
 	var bs1, ar curve.G1Jac
 
@@ -394,11 +388,25 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		sizeH := int(pk.Domain.Cardinality - 1)
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
-		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		//resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
-		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+
+		hc2_1 := h.Range(0, sizeH/2, false)
+		hc2_2 := h.Range(sizeH/2, sizeH, false)
+		resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+
+		icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
+		icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH-1, true), &cfg, resKrs2_2)
+
+		krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
+		krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
+
+		krs2_gpu_add := krs2_gpu_1.AddAssign(&krs2_gpu_2)
+		krs2 = *krs2_gpu_add
+		//icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
-		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+		//krs2 = g1ProjectiveToG1Jac(resKrs2[0])
 
 		h.Free()
 
@@ -437,7 +445,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go computeBS2")
-	time.Sleep(testsleep * time.Second)
 
 	// schedule our proof part computations
 	arDone := make(chan error, 1)
@@ -446,7 +453,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go computeAR1")
-	time.Sleep(testsleep * time.Second)
 
 	BS1Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(device3, func(args ...any) {
@@ -454,7 +460,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go computeBS1")
-	time.Sleep(testsleep * time.Second)
 
 	KrsDone := make(chan error, 1)
 	icicle_cr.RunOnDevice(device4, func(args ...any) {
@@ -462,7 +467,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go computeKrs")
-	time.Sleep(testsleep * time.Second)
 
 	Krs2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(device0, func(args ...any) {
@@ -470,25 +474,22 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	})
 
 	log.Debug().Msg("go computeKrs2")
-	time.Sleep(testsleep * time.Second)
 
 	<-KrsDone
-	<-Krs2Done
-	<-BS2Done
-	<-arDone
-	<-BS1Done
-
 	krs.AddMixed(&deltas[2])
-
+	<-Krs2Done
 	krs.AddAssign(&krs2)
 
+	<-arDone
 	p1.ScalarMultiplication(&ar, &s)
 	krs.AddAssign(&p1)
 
+	<-BS1Done
 	p1.ScalarMultiplication(&bs1, &r)
 	krs.AddAssign(&p1)
-
 	proof.Krs.FromJacobian(&krs)
+
+	<-BS2Done
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 	return proof, nil
