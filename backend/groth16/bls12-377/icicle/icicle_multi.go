@@ -404,7 +404,20 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		for _, d := range hOnHost {
 			h_in_cpu = append(h_in_cpu, d)
 		}
+
+		var krs2_cpu_1, krs2_cpu_2 curve.G1Jac
+
 		_, err = krs2_cpu.MultiExp(pk.G1.Z, h_in_cpu, ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
+		if err != nil {
+			return err
+		}
+
+		_, err = krs2_cpu_1.MultiExp(pk.G1.Z[:10], h_in_cpu[:10], ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
+		if err != nil {
+			return err
+		}
+
+		_, err = krs2_cpu_2.MultiExp(pk.G1.Z[10:], h_in_cpu[10:], ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
 		if err != nil {
 			return err
 		}
