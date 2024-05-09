@@ -20,7 +20,6 @@
 package groth16
 
 import (
-	icicle_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761/icicle"
 	"io"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -46,13 +45,16 @@ import (
 	gnarkio "github.com/consensys/gnark/io"
 
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
-	icicle_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
 	groth16_bls12381 "github.com/consensys/gnark/backend/groth16/bls12-381"
 	groth16_bls24315 "github.com/consensys/gnark/backend/groth16/bls24-315"
 	groth16_bls24317 "github.com/consensys/gnark/backend/groth16/bls24-317"
 	groth16_bn254 "github.com/consensys/gnark/backend/groth16/bn254"
 	groth16_bw6633 "github.com/consensys/gnark/backend/groth16/bw6-633"
 	groth16_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761"
+
+	icicle_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
+	icicle_bn254 "github.com/consensys/gnark/backend/groth16/bn254/icicle"
+	icicle_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761/icicle"
 )
 
 type groth16Object interface {
@@ -178,10 +180,11 @@ func Prove(r1cs constraint.ConstraintSystem, pk ProvingKey, fullWitness witness.
 
 	case *cs_bls12381.R1CS:
 		return groth16_bls12381.Prove(_r1cs, pk.(*groth16_bls12381.ProvingKey), fullWitness, opts...)
-
 	case *cs_bn254.R1CS:
+		if icicle_bn254.HasIcicle {
+			return icicle_bn254.Prove(_r1cs, pk.(*icicle_bn254.ProvingKey), fullWitness, opts...)
+		}
 		return groth16_bn254.Prove(_r1cs, pk.(*groth16_bn254.ProvingKey), fullWitness, opts...)
-
 	case *cs_bw6761.R1CS:
 		if icicle_bw6761.HasIcicle {
 			return icicle_bw6761.Prove(_r1cs, pk.(*icicle_bw6761.ProvingKey), fullWitness, opts...)
@@ -235,6 +238,9 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 		var pk groth16_bn254.ProvingKey
 		if err := groth16_bn254.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
+		}
+		if icicle_bn254.HasIcicle {
+			return &icicle_bn254.ProvingKey{ProvingKey: &pk}, &vk, nil
 		}
 		return &pk, &vk, nil
 	case *cs_bw6761.R1CS:
@@ -297,6 +303,13 @@ func DummySetup(r1cs constraint.ConstraintSystem) (ProvingKey, error) {
 		}
 		return &pk, nil
 	case *cs_bn254.R1CS:
+		if icicle_bn254.HasIcicle {
+			var pk icicle_bn254.ProvingKey
+			if err := icicle_bn254.DummySetup(_r1cs, &pk); err != nil {
+				return nil, err
+			}
+			return &pk, nil
+		}
 		var pk groth16_bn254.ProvingKey
 		if err := groth16_bn254.DummySetup(_r1cs, &pk); err != nil {
 			return nil, err
@@ -345,6 +358,11 @@ func NewProvingKey(curveID ecc.ID) ProvingKey {
 	switch curveID {
 	case ecc.BN254:
 		pk = &groth16_bn254.ProvingKey{}
+		if icicle_bn254.HasIcicle {
+			pk = &icicle_bn254.ProvingKey{
+				ProvingKey: &groth16_bn254.ProvingKey{},
+			}
+		}
 	case ecc.BLS12_377:
 		pk = &groth16_bls12377.ProvingKey{}
 		if icicle_bls12377.HasIcicle {
