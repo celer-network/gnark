@@ -397,6 +397,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 		hc := h.RangeTo(sizeH, false)
 		hOnHost := make(icicle_core.HostSlice[fr.Element], sizeH)
+		log.Debug().Msg(fmt.Sprintf("sizeH: %d, h size: %d", sizeH, h.Len()))
 		icicle_bls12377.ToMontgomery(&hc)
 		hOnHost.CopyFromDevice(&hc)
 
