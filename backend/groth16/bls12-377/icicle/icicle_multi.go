@@ -4,8 +4,10 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-377"
@@ -387,7 +389,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}
 
-	var krs2 curve.G1Jac
+	var krs2, krs2_cpu curve.G1Jac
 	computeKrs2 := func() error {
 		<-chHDone
 		// TODO wait h done
@@ -395,18 +397,32 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 		hc := h.RangeTo(sizeH, false)
 		hOnHost := make(icicle_core.HostSlice[fr.Element], sizeH)
+		icicle_bls12377.ToMontgomery(&hc)
 		hOnHost.CopyFromDevice(&hc)
+
+		var h_in_cpu []fr.Element
+		for _, d := range hOnHost {
+			h_in_cpu = append(h_in_cpu, d)
+		}
+		_, err = krs2_cpu.MultiExp(pk.G1.Z, h_in_cpu, ecc.MultiExpConfig{NbTasks: runtime.NumCPU() / 2})
+		if err != nil {
+			return err
+		}
+
 		var hc2 icicle_core.DeviceSlice
 		hOnHost.CopyToDevice(&hc2, true)
-
+		icicle_bls12377.FromMontgomery(&hc2)
 		h.Free()
 
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
+		log.Debug().Msg(fmt.Sprintf("hc2: %d, G1Device Z: %d, sizeH: %d", hc2.Len(), pk.G1Device.Z.Len(), sizeH))
 		icicle_msm.Msm(hc2, pk.G1Device.Z, &cfg, resKrs2)
 		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+
+		log.Debug().Msg(fmt.Sprintf("krs2 is equal: %v", krs2.Equal(&krs2_cpu)))
 
 		return nil
 	}
