@@ -284,24 +284,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 
-	// H (witness reduction / FFT part)
-	var h icicle_core.DeviceSlice
-	chHDone := make(chan struct{}, 1)
-	go func() {
-		h = computeH(solution.A, solution.B, solution.C, pk, log)
-
-		solution.A = nil
-		solution.B = nil
-		solution.C = nil
-		chHDone <- struct{}{}
-	}()
-
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var wireValuesADevice, wireValuesBDevice icicle_core.DeviceSlice
-	chWireValuesA, chWireValuesB := make(chan struct{}, 1), make(chan struct{}, 1)
 
-	go func() {
+	prepareWireValuesA := func() {
 		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
@@ -315,10 +302,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		wireValuesAHost := (icicle_core.HostSlice[fr.Element])(wireValuesA)
 		wireValuesAHost.CopyToDevice(&wireValuesADevice, true)
 		icicle_bls12377.FromMontgomery(&wireValuesADevice)
+	}
 
-		close(chWireValuesA)
-	}()
-	go func() {
+	prepareWireValuesB := func() {
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
@@ -332,9 +318,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
 		wireValuesBHost.CopyToDevice(&wireValuesBDevice, true)
 		icicle_bls12377.FromMontgomery(&wireValuesBDevice)
-
-		close(chWireValuesB)
-	}()
+	}
 
 	// sample random r and s
 	var r, s big.Int
@@ -356,8 +340,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var bs1, ar curve.G1Jac
 
 	computeBS1 := func() error {
-		<-chWireValuesB
-
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
@@ -374,8 +356,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeAR1 := func() error {
-		<-chWireValuesA
-
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
@@ -393,6 +373,11 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeKRS := func() error {
+		h := computeH(solution.A, solution.B, solution.C, pk, log)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+
 		var krs, krs2, p1 curve.G1Jac
 		sizeH := int(pk.Domain.Cardinality - 1)
 
@@ -400,6 +385,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
 		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		h.Free()
 		if isProfile {
 			log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
 		}
@@ -445,8 +431,6 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
-		<-chWireValuesB
-
 		cfg := icicle_g2.G2GetDefaultMSMConfig()
 		res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
 		start := time.Now()
@@ -465,14 +449,14 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}
 
-	// wait for FFT to end
-	<-chHDone
-
 	// schedule our proof part computations
+	prepareWireValuesA()
 	if err := computeAR1(); err != nil {
 		return nil, err
 	}
 	wireValuesADevice.Free()
+
+	prepareWireValuesB()
 	if err := computeBS1(); err != nil {
 		return nil, err
 	}
@@ -480,10 +464,10 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil, err
 	}
 	wireValuesBDevice.Free()
+
 	if err := computeKRS(); err != nil {
 		return nil, err
 	}
-	h.Free()
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 
