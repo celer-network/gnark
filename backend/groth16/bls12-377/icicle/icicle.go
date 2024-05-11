@@ -289,6 +289,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var wireValuesADevice, wireValuesBDevice icicle_core.DeviceSlice
 
 	prepareWireValuesA := func() {
+		log.Debug().Msg("start prepareWireValuesA")
 		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
 		for i, j := 0, 0; j < len(wireValuesA); i++ {
 			if pk.InfinityA[i] {
@@ -305,6 +306,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	prepareWireValuesB := func() {
+		log.Debug().Msg("start prepareWireValuesB")
 		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
 		for i, j := 0, 0; j < len(wireValuesB); i++ {
 			if pk.InfinityB[i] {
@@ -340,6 +342,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	var bs1, ar curve.G1Jac
 
 	computeBS1 := func() error {
+		log.Debug().Msg("start computeBS1")
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
@@ -356,6 +359,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeAR1 := func() error {
+		log.Debug().Msg("start computeAR1")
 		cfg := icicle_msm.GetDefaultMSMConfig()
 		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
 		start := time.Now()
@@ -373,6 +377,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeKRS := func() error {
+		log.Debug().Msg("start computeKRS")
 		h := computeH(solution.A, solution.B, solution.C, pk, log)
 		solution.A = nil
 		solution.B = nil
@@ -428,6 +433,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	}
 
 	computeBS2 := func() error {
+		log.Debug().Msg("start computeBS2")
 		// Bs2 (1 multi exp G2 - size = len(wires))
 		var Bs, deltaS curve.G2Jac
 
