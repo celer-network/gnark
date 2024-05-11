@@ -7,9 +7,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
-	icicle_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377/icicle"
 	icicle_bw6761 "github.com/consensys/gnark/backend/groth16/bw6-761/icicle"
-	cs_bls12377 "github.com/consensys/gnark/constraint/bls12-377"
 	cs_bw6761 "github.com/consensys/gnark/constraint/bw6-761"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -53,8 +51,9 @@ func TestLargeCircuitInGpuOnBls12377(t *testing.T) {
 	innerPubWitness, err := innerWitness.Public()
 	assert.NoError(err)
 	for i := 0; i < 10; i++ {
-		innerProof, err := icicle_bls12377.ProveOnMulti(innerCcs.(*cs_bls12377.R1CS), innerPK.(*icicle_bls12377.ProvingKey), innerWitness, backend.WithIcicleAcceleration())
-		assert.NoError(err)
+		//innerProof, err := icicle_bls12377.ProveOnMulti(innerCcs.(*cs_bls12377.R1CS), innerPK.(*icicle_bls12377.ProvingKey), innerWitness, backend.WithIcicleAcceleration())
+		//assert.NoError(err)
+		innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 1, 2, 3, 4}))
 		err = groth16.Verify(innerProof, innerVK, innerPubWitness)
 		assert.NoError(err)
 	}

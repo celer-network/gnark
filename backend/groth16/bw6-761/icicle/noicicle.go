@@ -13,11 +13,13 @@ import (
 
 const HasIcicle = false
 
+type deviceInfo struct {
+}
+
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bw6761.Proof, error) {
 	return nil, fmt.Errorf("icicle backend requested but program compiled without 'icicle' build tag")
 }
 
 func SetupDevicePointers(pk *ProvingKey) error {
-	fmt.Println("WARN: no icicle to use or load")
-	return nil
+	return fmt.Errorf("WARN: no icicle to use or load")
 }

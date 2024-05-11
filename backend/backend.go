@@ -63,6 +63,7 @@ type ProverConfig struct {
 	ChallengeHash  hash.Hash
 	KZGFoldingHash hash.Hash
 	Accelerator    string
+	MultiGpuSelect []int // when Accelerator == "icicle", at most 5
 }
 
 // NewProverConfig returns a default ProverConfig with given prover options opts
@@ -132,6 +133,17 @@ func WithProverKZGFoldingHashFunction(hFunc hash.Hash) ProverOption {
 func WithIcicleAcceleration() ProverOption {
 	return func(pc *ProverConfig) error {
 		pc.Accelerator = "icicle"
+		return nil
+	}
+}
+
+func WithMultiGpuSelect(deviceIds []int) ProverOption {
+	return func(pc *ProverConfig) error {
+		pc.MultiGpuSelect = deviceIds
+		for i := len(deviceIds); i < 8; i++ {
+			// file to 5
+			pc.MultiGpuSelect = append(pc.MultiGpuSelect, 0)
+		}
 		return nil
 	}
 }

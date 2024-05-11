@@ -1,22 +1,9 @@
 package icicle_bls12377
 
 import (
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 	groth16_bls12377 "github.com/consensys/gnark/backend/groth16/bls12-377"
 	cs "github.com/consensys/gnark/constraint/bls12-377"
-	icicle_core "github.com/ingonyama-zk/icicle/v2/wrappers/golang/core"
 )
-
-type deviceInfo struct {
-	CosetGenerator [fr.Limbs * 2]uint32
-	G1Device       struct {
-		A, B, K, Z icicle_core.DeviceSlice
-	}
-	G2Device struct {
-		B icicle_core.DeviceSlice
-	}
-	DenDevice icicle_core.DeviceSlice
-}
 
 type ProvingKey struct {
 	*groth16_bls12377.ProvingKey
