@@ -8,6 +8,7 @@ import (
 	"math/bits"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bw6-761"
@@ -38,6 +39,8 @@ import (
 )
 
 const HasIcicle = true
+
+var singleDeviceLock sync.Mutex
 
 type deviceInfo struct {
 	CosetGenerator [fr.Limbs * 2]uint32
@@ -300,6 +303,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
 		return nil, err
 	}
+
+	singleDeviceLock.Lock()
+	singleDeviceLock.Unlock()
 
 	// H (witness reduction / FFT part)
 	var h icicle_core.DeviceSlice

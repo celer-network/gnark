@@ -8,6 +8,7 @@ import (
 	"math/bits"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
@@ -38,6 +39,8 @@ import (
 )
 
 const HasIcicle = true
+
+var singleDeviceLock sync.Mutex
 
 type deviceInfo struct {
 	CosetGenerator [fr.Limbs * 2]uint32
@@ -222,6 +225,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if opt.Accelerator != "icicle" {
 		return groth16_bn254.Prove(r1cs, pk.ProvingKey, fullWitness, opts...)
 	}
+	if len(opt.MultiGpuSelect) > 0 {
+		return ProveOnMulti(r1cs, pk, fullWitness, opts...)
+	}
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
@@ -291,6 +297,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
 		return nil, err
 	}
+
+	singleDeviceLock.Lock()
+	singleDeviceLock.Unlock()
 
 	// H (witness reduction / FFT part)
 	var h icicle_core.DeviceSlice
