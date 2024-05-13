@@ -139,6 +139,10 @@ func WithIcicleAcceleration() ProverOption {
 
 func WithMultiGpuSelect(deviceIds []int) ProverOption {
 	return func(pc *ProverConfig) error {
+		if len(deviceIds) == 0 {
+			// if 0, prove will skip use multi gpu
+			return nil
+		}
 		pc.MultiGpuSelect = deviceIds
 		for i := len(deviceIds); i < 8; i++ {
 			// file to 5
