@@ -64,6 +64,7 @@ type ProverConfig struct {
 	KZGFoldingHash hash.Hash
 	Accelerator    string
 	MultiGpuSelect []int // when Accelerator == "icicle", at most 5
+	FreePkWithGpu  bool  // default true
 }
 
 // NewProverConfig returns a default ProverConfig with given prover options opts
@@ -74,6 +75,7 @@ func NewProverConfig(opts ...ProverOption) (ProverConfig, error) {
 		// separation tags for PLONK and Groth16
 		ChallengeHash:  sha256.New(),
 		KZGFoldingHash: sha256.New(),
+		FreePkWithGpu:  true,
 	}
 	for _, option := range opts {
 		if err := option(&opt); err != nil {
@@ -148,6 +150,13 @@ func WithMultiGpuSelect(deviceIds []int) ProverOption {
 			// file to 5
 			pc.MultiGpuSelect = append(pc.MultiGpuSelect, 0)
 		}
+		return nil
+	}
+}
+
+func WithFreePkWithGpu(free bool) ProverOption {
+	return func(pc *ProverConfig) error {
+		pc.FreePkWithGpu = free
 		return nil
 	}
 }

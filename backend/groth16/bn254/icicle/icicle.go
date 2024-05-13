@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"math/bits"
 	"os"
+	"runtime"
 	"time"
 
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
@@ -49,7 +50,7 @@ type deviceInfo struct {
 	DenDevice icicle_core.DeviceSlice
 }
 
-func (pk *ProvingKey) setupDevicePointers() error {
+func (pk *ProvingKey) setupDevicePointers(freePk bool) error {
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -147,6 +148,17 @@ func (pk *ProvingKey) setupDevicePointers() error {
 
 	<-copyG2BDone
 	/*************************  End G2 Device Setup  ***************************/
+
+	if freePk {
+		pk.Domain = fft.Domain{Cardinality: pk.Domain.Cardinality}
+		pk.G1.A = nil
+		pk.G1.B = nil
+		pk.G1.K = nil
+		pk.G1.Z = make([]curve.G1Affine, 1) // maybe no need, as we can handle zero now
+		pk.G2.B = nil
+		runtime.GC()
+	}
+
 	return nil
 }
 
@@ -216,7 +228,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	if pk.deviceInfo == nil {
 		log.Debug().Msg("precomputing proving key in GPU")
-		if err := pk.setupDevicePointers(); err != nil {
+		if err := pk.setupDevicePointers(opt.FreePkWithGpu); err != nil {
 			return nil, fmt.Errorf("setup device pointers: %w", err)
 		}
 	}

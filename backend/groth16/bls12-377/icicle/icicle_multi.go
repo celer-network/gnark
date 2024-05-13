@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
+	"runtime"
 	"sync"
 	"time"
 
@@ -37,7 +38,7 @@ var (
 	deviceLocks [8]sync.Mutex
 )
 
-func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int) error {
+func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -142,6 +143,17 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int) error {
 
 	<-copyG2BDone
 	/*************************  End G2 Device Setup  ***************************/
+
+	if freePk {
+		pk.Domain = fft.Domain{Cardinality: pk.Domain.Cardinality}
+		pk.G1.A = nil
+		pk.G1.B = nil
+		pk.G1.K = nil
+		pk.G1.Z = make([]curve.G1Affine, 1) // maybe no need, as we can handle zero now
+		pk.G2.B = nil
+		runtime.GC()
+	}
+
 	return nil
 }
 
@@ -158,7 +170,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	}
 	if pk.deviceInfo == nil {
 		log.Debug().Msg("precomputing proving key on multi GPU")
-		if err := pk.setupDevicePointersOnMulti(opt.MultiGpuSelect); err != nil {
+		if err := pk.setupDevicePointersOnMulti(opt.MultiGpuSelect, opt.FreePkWithGpu); err != nil {
 			return nil, fmt.Errorf("setup device pointers: %w", err)
 		}
 	}
