@@ -37,8 +37,6 @@ import (
 
 var (
 	deviceLocks [8]sync.Mutex
-
-	solveLock sync.Mutex
 )
 
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
