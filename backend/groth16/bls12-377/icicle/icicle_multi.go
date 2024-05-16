@@ -249,7 +249,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized)
 		commitmentPokDone <- err
 	}()
-	deltasDone := make(chan error, 1)
 	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
 	<-commitmentPokDone
 
@@ -258,8 +257,6 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
 	var bs1, ar, krs, p1, krs2 curve.G1Jac
-
-	<-deltasDone
 
 	BS2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[2], func(args ...any) {
