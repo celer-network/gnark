@@ -36,6 +36,8 @@ import (
 
 var (
 	deviceLocks [8]sync.Mutex
+
+	solveLock sync.Mutex
 )
 
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
@@ -215,7 +217,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}))
 
+	solveLock.Lock()
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
+	solveLock.Unlock()
 	if err != nil {
 		return nil, err
 	}
