@@ -36,6 +36,7 @@ import (
 
 var (
 	deviceLocks [8]sync.Mutex
+	channelLock = make(chan int, 1)
 )
 
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
@@ -159,6 +160,8 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
+	channelLock <- 1
+
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	log.Debug().Msg("start ProveOnMulti")
 	opt, err := backend.NewProverConfig(opts...)
@@ -250,6 +253,8 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
 		return nil, err
 	}
+
+	<-channelLock
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
