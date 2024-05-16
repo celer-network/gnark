@@ -40,7 +40,11 @@ import (
 
 const HasIcicle = true
 
-var singleDeviceLock sync.Mutex
+var (
+	singleDeviceLock sync.Mutex
+	deviceSetupLock  sync.Mutex
+	solveLimit       = make(chan int, 5)
+)
 
 type deviceInfo struct {
 	CosetGenerator [fr.Limbs * 2]uint32
@@ -54,6 +58,8 @@ type deviceInfo struct {
 }
 
 func (pk *ProvingKey) setupDevicePointers(freePk bool) error {
+	deviceSetupLock.Lock()
+	defer deviceSetupLock.Unlock()
 	if pk.deviceInfo != nil {
 		return nil
 	}
@@ -280,7 +286,9 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}))
 
+	solveLimit <- 1
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
+	<-solveLimit
 	if err != nil {
 		return nil, err
 	}
