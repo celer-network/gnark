@@ -36,7 +36,8 @@ import (
 )
 
 var (
-	deviceLocks [8]sync.Mutex
+	deviceLocks      [8]sync.Mutex
+	proveLockChannel = make(chan int, 3)
 )
 
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
@@ -160,6 +161,7 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
+	proveLockChannel <- 1
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	log.Debug().Msg("start ProveOnMulti")
 	opt, err := backend.NewProverConfig(opts...)
@@ -237,6 +239,8 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 	_r.BigInt(&r)
 	_s.BigInt(&s)
+
+	<-proveLockChannel
 
 	// computes r[δ], s[δ], kr[δ]
 
