@@ -4,6 +4,7 @@ package icicle_bls12377
 
 import (
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"math/big"
 	"math/bits"
 	"runtime"
@@ -217,9 +218,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}))
 
-	solveLock.Lock()
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
-	solveLock.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -243,214 +242,32 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 	// computes r[δ], s[δ], kr[δ]
 
-	deltasDone := make(chan error, 1)
-	var deltas []curve.G1Affine
-	go func() {
-		deltas = curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
-		deltasDone <- nil
-	}()
-
-	CommitmentPokDone := make(chan error, 1)
+	commitmentPokDone := make(chan error, 1)
 	go func() {
 		commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
 		for i := range commitmentInfo {
 			copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
 		}
 		proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized)
-		CommitmentPokDone <- err
+		commitmentPokDone <- err
 	}()
+	deltasDone := make(chan error, 1)
+	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+	<-commitmentPokDone
 
 	start := time.Now()
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
-	var bs1, ar curve.G1Jac
-
-	computeBS1 := func(deviceId int) error {
-		deviceLocks[deviceId].Lock()
-		defer deviceLocks[deviceId].Unlock()
-
-		var wireValuesBDevice icicle_core.DeviceSlice
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
-		for i, j := 0, 0; j < len(wireValuesB); i++ {
-			if pk.InfinityB[i] {
-				continue
-			}
-			wireValuesB[j] = wireValues[i]
-			j++
-		}
-
-		// Copy scalars to the device and retain ptr to them
-		wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
-		wireValuesBHost.CopyToDevice(&wireValuesBDevice, true)
-		icicle_bls12377.FromMontgomery(&wireValuesBDevice)
-
-		cfg := icicle_msm.GetDefaultMSMConfig()
-		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-		start := time.Now()
-		icicle_msm.Msm(wireValuesBDevice, pk.G1Device.B, &cfg, res)
-		log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs1")
-		bs1 = g1ProjectiveToG1Jac(res[0])
-		bs1.AddMixed(&pk.G1.Beta)
-		bs1.AddMixed(&deltas[1])
-
-		wireValuesBDevice.Free()
-
-		return nil
-	}
-
-	computeAR1 := func(deviceId int) error {
-		deviceLocks[deviceId].Lock()
-		defer deviceLocks[deviceId].Unlock()
-
-		var wireValuesADevice icicle_core.DeviceSlice
-		wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
-		for i, j := 0, 0; j < len(wireValuesA); i++ {
-			if pk.InfinityA[i] {
-				continue
-			}
-			wireValuesA[j] = wireValues[i]
-			j++
-		}
-
-		// Copy scalars to the device and retain ptr to them
-		wireValuesAHost := (icicle_core.HostSlice[fr.Element])(wireValuesA)
-		wireValuesAHost.CopyToDevice(&wireValuesADevice, true)
-		icicle_bls12377.FromMontgomery(&wireValuesADevice)
-
-		cfg := icicle_msm.GetDefaultMSMConfig()
-		res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-		start := time.Now()
-		icicle_msm.Msm(wireValuesADevice, pk.G1Device.A, &cfg, res)
-		log.Debug().Dur("took", time.Since(start)).Msg("MSM Ar1")
-		ar = g1ProjectiveToG1Jac(res[0])
-
-		ar.AddMixed(&pk.G1.Alpha)
-		ar.AddMixed(&deltas[0])
-		proof.Ar.FromJacobian(&ar)
-
-		wireValuesADevice.Free()
-
-		return nil
-	}
-
-	var krs, p1 curve.G1Jac
-	computeKrs := func(deviceId int) error {
-		deviceLocks[deviceId].Lock()
-		defer deviceLocks[deviceId].Unlock()
-
-		cfg := icicle_msm.GetDefaultMSMConfig()
-		// filter the wire values if needed
-		// TODO Perf @Tabaie worst memory allocation offender
-		toRemove := commitmentInfo.GetPrivateCommitted()
-		toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
-		_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
-		_wireValuesHost := (icicle_core.HostSlice[fr.Element])(_wireValues)
-
-		var wireValuesDevice icicle_core.DeviceSlice
-		_wireValuesHost.CopyToDevice(&wireValuesDevice, true)
-		icicle_bls12377.FromMontgomery(&wireValuesDevice)
-
-		resKrs := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-		start := time.Now()
-		icicle_msm.Msm(wireValuesDevice, pk.G1Device.K, &cfg, resKrs)
-		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs")
-		krs = g1ProjectiveToG1Jac(resKrs[0])
-
-		wireValuesDevice.Free()
-
-		return nil
-	}
-
-	var krs2 curve.G1Jac
-	computeKrs2 := func(deviceId int) error {
-		deviceLocks[deviceId].Lock()
-		defer deviceLocks[deviceId].Unlock()
-
-		// H (witness reduction / FFT part)
-		var h icicle_core.DeviceSlice
-		h = computeHOnDevice(solution.A, solution.B, solution.C, pk, log, deviceId)
-		solution.A = nil
-		solution.B = nil
-		solution.C = nil
-		log.Debug().Msg("go computeHOnDevice")
-
-		// TODO wait h done
-		sizeH := int(pk.Domain.Cardinality - 1)
-
-		cfg := icicle_msm.GetDefaultMSMConfig()
-		//resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-		start := time.Now()
-
-		hc2_1 := h.Range(0, sizeH/2, false)
-		hc2_2 := h.Range(sizeH/2, sizeH, false)
-		resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-		resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
-
-		icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
-		icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH-1, true), &cfg, resKrs2_2)
-
-		krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
-		krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
-
-		krs2_gpu_add := krs2_gpu_1.AddAssign(&krs2_gpu_2)
-		krs2 = *krs2_gpu_add
-		//icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
-		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
-		//krs2 = g1ProjectiveToG1Jac(resKrs2[0])
-
-		h.Free()
-
-		return nil
-	}
-
-	computeBS2 := func(deviceId int) error {
-		deviceLocks[deviceId].Lock()
-		defer deviceLocks[deviceId].Unlock()
-
-		var wireValuesBDeviceForG2 icicle_core.DeviceSlice
-		wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
-		for i, j := 0, 0; j < len(wireValuesB); i++ {
-			if pk.InfinityB[i] {
-				continue
-			}
-			wireValuesB[j] = wireValues[i]
-			j++
-		}
-
-		// Copy scalars to the device and retain ptr to them
-		wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
-		wireValuesBHost.CopyToDevice(&wireValuesBDeviceForG2, true)
-		icicle_bls12377.FromMontgomery(&wireValuesBDeviceForG2)
-
-		// Bs2 (1 multi exp G2 - size = len(wires))
-		var Bs, deltaS curve.G2Jac
-
-		cfg := icicle_g2.G2GetDefaultMSMConfig()
-		res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
-		start := time.Now()
-		icicle_g2.G2Msm(wireValuesBDeviceForG2, pk.G2Device.B, &cfg, res)
-
-		log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs2 G2")
-		Bs = g2ProjectiveToG2Jac(&res[0])
-
-		deltaS.FromAffine(&pk.G2.Delta)
-		deltaS.ScalarMultiplication(&deltaS, &s)
-		Bs.AddAssign(&deltaS)
-		Bs.AddMixed(&pk.G2.Beta)
-
-		proof.Bs.FromJacobian(&Bs)
-
-		wireValuesBDeviceForG2.Free()
-
-		return nil
-	}
+	var bs1, ar, krs, p1, krs2 curve.G1Jac
 
 	<-deltasDone
 
 	BS2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[2], func(args ...any) {
-		BS2Done <- computeBS2(deviceIds[2])
+		Bs, bsErr := computeBS2(deviceIds[2], wireValues, pk, s)
+		proof.Bs.FromJacobian(&Bs)
+		BS2Done <- bsErr
 	})
 
 	log.Debug().Msg("go computeBS2")
@@ -458,28 +275,37 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	// schedule our proof part computations
 	arDone := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[1], func(args ...any) {
-		arDone <- computeAR1(deviceIds[1])
+		var arErr error
+		ar, arErr = computeAR1(deviceIds[1], wireValues, pk, deltas)
+		proof.Ar.FromJacobian(&ar)
+		arDone <- arErr
 	})
 
 	log.Debug().Msg("go computeAR1")
 
 	BS1Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[3], func(args ...any) {
-		BS1Done <- computeBS1(deviceIds[3])
+		var bs1Err error
+		bs1, bs1Err = computeBS1(deviceIds[3], wireValues, pk, deltas)
+		BS1Done <- bs1Err
 	})
 
 	log.Debug().Msg("go computeBS1")
 
 	KrsDone := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[4], func(args ...any) {
-		KrsDone <- computeKrs(deviceIds[4])
+		var krsErr error
+		krs, krsErr = computeKrs(deviceIds[4], wireValues, r1cs, commitmentInfo, pk)
+		KrsDone <- krsErr
 	})
 
 	log.Debug().Msg("go computeKrs")
 
 	Krs2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[0], func(args ...any) {
-		Krs2Done <- computeKrs2(deviceIds[0])
+		var krs2Err error
+		krs2, krs2Err = computeKrs2(deviceIds[0], solution, pk, log)
+		Krs2Done <- krs2Err
 	})
 
 	log.Debug().Msg("go computeKrs2")
@@ -499,10 +325,192 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	proof.Krs.FromJacobian(&krs)
 
 	<-BS2Done
-	<-CommitmentPokDone
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 	return proof, nil
+}
+
+func computeBS1(deviceId int, wireValues []fr.Element, pk *ProvingKey, deltas []curve.G1Affine) (curve.G1Jac, error) {
+	var bs1 curve.G1Jac
+	deviceLocks[deviceId].Lock()
+	defer deviceLocks[deviceId].Unlock()
+
+	var wireValuesBDevice icicle_core.DeviceSlice
+	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+	for i, j := 0, 0; j < len(wireValuesB); i++ {
+		if pk.InfinityB[i] {
+			continue
+		}
+		wireValuesB[j] = wireValues[i]
+		j++
+	}
+	// Copy scalars to the device and retain ptr to them
+	wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
+	wireValuesBHost.CopyToDevice(&wireValuesBDevice, true)
+	icicle_bls12377.FromMontgomery(&wireValuesBDevice)
+
+	cfg := icicle_msm.GetDefaultMSMConfig()
+	res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+	start := time.Now()
+	icicle_msm.Msm(wireValuesBDevice, pk.G1Device.B, &cfg, res)
+	log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs1")
+	bs1 = g1ProjectiveToG1Jac(res[0])
+	bs1.AddMixed(&pk.G1.Beta)
+	bs1.AddMixed(&deltas[1])
+
+	wireValuesBDevice.Free()
+
+	return bs1, nil
+}
+
+func computeAR1(deviceId int, wireValues []fr.Element, pk *ProvingKey, deltas []curve.G1Affine) (curve.G1Jac, error) {
+	var ar curve.G1Jac
+
+	deviceLocks[deviceId].Lock()
+	defer deviceLocks[deviceId].Unlock()
+
+	var wireValuesADevice icicle_core.DeviceSlice
+	wireValuesA := make([]fr.Element, len(wireValues)-int(pk.NbInfinityA))
+	for i, j := 0, 0; j < len(wireValuesA); i++ {
+		if pk.InfinityA[i] {
+			continue
+		}
+		wireValuesA[j] = wireValues[i]
+		j++
+	}
+
+	// Copy scalars to the device and retain ptr to them
+	wireValuesAHost := (icicle_core.HostSlice[fr.Element])(wireValuesA)
+	wireValuesAHost.CopyToDevice(&wireValuesADevice, true)
+	icicle_bls12377.FromMontgomery(&wireValuesADevice)
+
+	cfg := icicle_msm.GetDefaultMSMConfig()
+	res := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+	start := time.Now()
+	icicle_msm.Msm(wireValuesADevice, pk.G1Device.A, &cfg, res)
+	log.Debug().Dur("took", time.Since(start)).Msg("MSM Ar1")
+	ar = g1ProjectiveToG1Jac(res[0])
+
+	ar.AddMixed(&pk.G1.Alpha)
+	ar.AddMixed(&deltas[0])
+	//proof.Ar.FromJacobian(&ar)
+
+	wireValuesADevice.Free()
+
+	return ar, nil
+}
+
+func computeKrs(deviceId int, wireValues []fr.Element, r1cs *cs.R1CS, commitmentInfo constraint.Groth16Commitments, pk *ProvingKey) (curve.G1Jac, error) {
+	var krs curve.G1Jac
+
+	deviceLocks[deviceId].Lock()
+	defer deviceLocks[deviceId].Unlock()
+
+	cfg := icicle_msm.GetDefaultMSMConfig()
+	// filter the wire values if needed
+	// TODO Perf @Tabaie worst memory allocation offender
+	toRemove := commitmentInfo.GetPrivateCommitted()
+	toRemove = append(toRemove, commitmentInfo.CommitmentIndexes())
+	_wireValues := filterHeap(wireValues[r1cs.GetNbPublicVariables():], r1cs.GetNbPublicVariables(), internal.ConcatAll(toRemove...))
+	_wireValuesHost := (icicle_core.HostSlice[fr.Element])(_wireValues)
+
+	var wireValuesDevice icicle_core.DeviceSlice
+	_wireValuesHost.CopyToDevice(&wireValuesDevice, true)
+	icicle_bls12377.FromMontgomery(&wireValuesDevice)
+
+	resKrs := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+	start := time.Now()
+	icicle_msm.Msm(wireValuesDevice, pk.G1Device.K, &cfg, resKrs)
+	log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs")
+	krs = g1ProjectiveToG1Jac(resKrs[0])
+
+	wireValuesDevice.Free()
+
+	return krs, nil
+}
+
+func computeKrs2(deviceId int, solution *cs.R1CSSolution, pk *ProvingKey, log zerolog.Logger) (curve.G1Jac, error) {
+	var krs2 curve.G1Jac
+	deviceLocks[deviceId].Lock()
+	defer deviceLocks[deviceId].Unlock()
+
+	// H (witness reduction / FFT part)
+	var h icicle_core.DeviceSlice
+	h = computeHOnDevice(solution.A, solution.B, solution.C, pk, log, deviceId)
+	solution.A = nil
+	solution.B = nil
+	solution.C = nil
+	log.Debug().Msg("go computeHOnDevice")
+
+	// TODO wait h done
+	sizeH := int(pk.Domain.Cardinality - 1)
+
+	cfg := icicle_msm.GetDefaultMSMConfig()
+	//resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+	start := time.Now()
+
+	hc2_1 := h.Range(0, sizeH/2, false)
+	hc2_2 := h.Range(sizeH/2, sizeH, false)
+	resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+	resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+
+	icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
+	icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH-1, true), &cfg, resKrs2_2)
+
+	krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
+	krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
+
+	krs2_gpu_add := krs2_gpu_1.AddAssign(&krs2_gpu_2)
+	krs2 = *krs2_gpu_add
+	//icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+	log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
+	//krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+
+	h.Free()
+
+	return krs2, nil
+}
+
+func computeBS2(deviceId int, wireValues []fr.Element, pk *ProvingKey, s big.Int) (curve.G2Jac, error) {
+	deviceLocks[deviceId].Lock()
+	defer deviceLocks[deviceId].Unlock()
+
+	var wireValuesBDeviceForG2 icicle_core.DeviceSlice
+	wireValuesB := make([]fr.Element, len(wireValues)-int(pk.NbInfinityB))
+	for i, j := 0, 0; j < len(wireValuesB); i++ {
+		if pk.InfinityB[i] {
+			continue
+		}
+		wireValuesB[j] = wireValues[i]
+		j++
+	}
+
+	// Copy scalars to the device and retain ptr to them
+	wireValuesBHost := (icicle_core.HostSlice[fr.Element])(wireValuesB)
+	wireValuesBHost.CopyToDevice(&wireValuesBDeviceForG2, true)
+	icicle_bls12377.FromMontgomery(&wireValuesBDeviceForG2)
+
+	// Bs2 (1 multi exp G2 - size = len(wires))
+	var Bs, deltaS curve.G2Jac
+
+	cfg := icicle_g2.G2GetDefaultMSMConfig()
+	res := make(icicle_core.HostSlice[icicle_g2.G2Projective], 1)
+	start := time.Now()
+	icicle_g2.G2Msm(wireValuesBDeviceForG2, pk.G2Device.B, &cfg, res)
+
+	log.Debug().Dur("took", time.Since(start)).Msg("MSM Bs2 G2")
+	Bs = g2ProjectiveToG2Jac(&res[0])
+
+	deltaS.FromAffine(&pk.G2.Delta)
+	deltaS.ScalarMultiplication(&deltaS, &s)
+	Bs.AddAssign(&deltaS)
+	Bs.AddMixed(&pk.G2.Beta)
+
+	//proof.Bs.FromJacobian(&Bs)
+
+	wireValuesBDeviceForG2.Free()
+
+	return Bs, nil
 }
 
 func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger, deviceId int) icicle_core.DeviceSlice {
