@@ -41,7 +41,8 @@ var (
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
 	deviceSetupLock.Lock()
 	defer deviceSetupLock.Unlock()
-	if pk.deviceInfo != nil {
+
+	if pk.deviceInfo != nil && pk.DeviceReady {
 		return nil
 	}
 
@@ -156,12 +157,13 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 		runtime.GC()
 	}
 
+	pk.DeviceReady = true
+
 	return nil
 }
 
 // Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
 func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
-	solveLimit <- 1
 	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
 	log.Debug().Msg("start ProveOnMulti")
 	opt, err := backend.NewProverConfig(opts...)
@@ -218,6 +220,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}))
 
+	solveLimit <- 1
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
 	<-solveLimit
 	if err != nil {

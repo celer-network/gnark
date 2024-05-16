@@ -41,7 +41,7 @@ var (
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
 	deviceSetupLock.Lock()
 	defer deviceSetupLock.Unlock()
-	if pk.deviceInfo != nil {
+	if pk.deviceInfo != nil && pk.DeviceReady {
 		return nil
 	}
 
@@ -156,6 +156,8 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 		runtime.GC()
 	}
 
+	pk.DeviceReady = true
+
 	return nil
 }
 
@@ -170,7 +172,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	if opt.HashToFieldFn == nil {
 		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
 	}
-	if pk.deviceInfo == nil {
+	if pk.deviceInfo == nil && pk.DeviceReady {
 		log.Debug().Msg("precomputing proving key on multi GPU")
 		if err := pk.setupDevicePointersOnMulti(opt.MultiGpuSelect, opt.FreePkWithGpu); err != nil {
 			return nil, fmt.Errorf("setup device pointers: %w", err)
