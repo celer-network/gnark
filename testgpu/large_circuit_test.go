@@ -88,17 +88,17 @@ func TestLargeCircuitInGpuOnBls12377WithBatchLock(t *testing.T) {
 	innerPubWitness, err := innerWitness.Public()
 	assert.NoError(err)
 
-	innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 1, 2, 3, 4}))
-	assert.NoError(err)
-	err = groth16.Verify(innerProof, innerVK, innerPubWitness)
-	assert.NoError(err)
+	//innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 1, 2, 3, 4}))
+	//assert.NoError(err)
+	//err = groth16.Verify(innerProof, innerVK, innerPubWitness)
+	//assert.NoError(err)
 
 	var wg sync.WaitGroup
 	wg.Add(10)
 	for i := 0; i < 10; i++ {
 		go func() {
 			defer wg.Done()
-			innerProof, err = groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 1, 2, 3, 4}))
+			innerProof, err := groth16.Prove(innerCcs, innerPK, innerWitness, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 1, 2, 3, 4}))
 			assert.NoError(err)
 			err = groth16.Verify(innerProof, innerVK, innerPubWitness)
 			assert.NoError(err)
