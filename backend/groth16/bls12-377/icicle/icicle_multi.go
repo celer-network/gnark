@@ -36,7 +36,7 @@ import (
 
 var (
 	deviceLocks [8]sync.Mutex
-	channelLock = make(chan int, 1)
+	channelLock = make(chan int, 3)
 )
 
 func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) error {
