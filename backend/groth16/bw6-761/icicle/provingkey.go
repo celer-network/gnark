@@ -17,3 +17,7 @@ func Setup(r1cs *cs.R1CS, pk *ProvingKey, vk *groth16_bw6761.VerifyingKey) error
 func DummySetup(r1cs *cs.R1CS, pk *ProvingKey) error {
 	return groth16_bw6761.DummySetup(r1cs, pk.ProvingKey)
 }
+
+func (p *ProvingKey) isDeviceReady() bool {
+	return p.deviceInfo != nil && p.DeviceReady == true
+}
