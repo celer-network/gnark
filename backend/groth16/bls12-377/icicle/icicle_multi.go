@@ -238,18 +238,25 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	_s.BigInt(&s)
 
 	// computes r[δ], s[δ], kr[δ]
-	deltas := curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+
+	deltasDone := make(chan error, 1)
+	var deltas []curve.G1Affine
+	go func() {
+		deltas = curve.BatchScalarMultiplicationG1(&pk.G1.Delta, []fr.Element{_r, _s, _kr})
+		deltasDone <- nil
+	}()
+
+	CommitmentPokDone := make(chan error, 1)
+	go func() {
+		commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
+		for i := range commitmentInfo {
+			copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
+		}
+		proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized)
+		CommitmentPokDone <- err
+	}()
 
 	start := time.Now()
-
-	commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
-	for i := range commitmentInfo {
-		copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
-	}
-
-	if proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized); err != nil {
-		return nil, err
-	}
 
 	// we need to copy and filter the wireValues for each multi exp
 	// as pk.G1.A, pk.G1.B and pk.G2.B may have (a significant) number of point at infinity
@@ -435,6 +442,8 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}
 
+	<-deltasDone
+
 	BS2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[2], func(args ...any) {
 		BS2Done <- computeBS2(deviceIds[2])
@@ -486,6 +495,7 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	proof.Krs.FromJacobian(&krs)
 
 	<-BS2Done
+	<-CommitmentPokDone
 
 	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
 	return proof, nil
