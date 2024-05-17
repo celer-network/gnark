@@ -402,6 +402,30 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}
 
+	computeKrs2WithNoSplit := func(deviceId int) error {
+		deviceLocks[deviceId].Lock()
+		defer deviceLocks[deviceId].Unlock()
+
+		// H (witness reduction / FFT part)
+		var h icicle_core.DeviceSlice
+		h = computeHOnDevice(solution.A, solution.B, solution.C, pk, log, deviceId)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		log.Debug().Msg("go computeHOnDevice no split")
+
+		// TODO wait h done
+		sizeH := int(pk.Domain.Cardinality - 1)
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
+		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+		h.Free()
+		return nil
+	}
+
 	computeBS2 := func(deviceId int) error {
 		deviceLocks[deviceId].Lock()
 		defer deviceLocks[deviceId].Unlock()
@@ -475,7 +499,11 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 
 	Krs2Done := make(chan error, 1)
 	icicle_cr.RunOnDevice(deviceIds[0], func(args ...any) {
-		Krs2Done <- computeKrs2(deviceIds[0])
+		if opt.Krs2WithoutSplit {
+			Krs2Done <- computeKrs2WithNoSplit(deviceIds[0])
+		} else {
+			Krs2Done <- computeKrs2(deviceIds[0])
+		}
 	})
 
 	log.Debug().Msg("go computeKrs2")

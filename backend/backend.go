@@ -58,13 +58,14 @@ type ProverOption func(*ProverConfig) error
 
 // ProverConfig is the configuration for the prover with the options applied.
 type ProverConfig struct {
-	SolverOpts     []solver.Option
-	HashToFieldFn  hash.Hash
-	ChallengeHash  hash.Hash
-	KZGFoldingHash hash.Hash
-	Accelerator    string
-	MultiGpuSelect []int // when Accelerator == "icicle", at most 5
-	FreePkWithGpu  bool  // default true
+	SolverOpts       []solver.Option
+	HashToFieldFn    hash.Hash
+	ChallengeHash    hash.Hash
+	KZGFoldingHash   hash.Hash
+	Accelerator      string
+	MultiGpuSelect   []int // when Accelerator == "icicle", at most 5
+	FreePkWithGpu    bool  // default true
+	Krs2WithoutSplit bool  // default false, to
 }
 
 // NewProverConfig returns a default ProverConfig with given prover options opts
@@ -157,6 +158,13 @@ func WithMultiGpuSelect(deviceIds []int) ProverOption {
 func WithFreePkWithGpu(free bool) ProverOption {
 	return func(pc *ProverConfig) error {
 		pc.FreePkWithGpu = free
+		return nil
+	}
+}
+
+func WithKrs2NoSplit(noSplit bool) ProverOption {
+	return func(pc *ProverConfig) error {
+		pc.Krs2WithoutSplit = noSplit
 		return nil
 	}
 }
