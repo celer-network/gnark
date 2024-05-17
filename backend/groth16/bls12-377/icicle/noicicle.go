@@ -14,6 +14,7 @@ import (
 const HasIcicle = false
 
 type deviceInfo struct {
+	DeviceReady bool
 }
 
 func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {

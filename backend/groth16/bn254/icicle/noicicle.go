@@ -12,6 +12,7 @@ import (
 )
 
 type deviceInfo struct {
+	DeviceReady bool
 }
 
 const HasIcicle = false
