@@ -226,16 +226,12 @@ func Setup(r1cs constraint.ConstraintSystem) (ProvingKey, VerifyingKey, error) {
 		return &pk, &vk, nil
 	case *cs_bn254.R1CS:
 		var vk groth16_bn254.VerifyingKey
-		if icicle_bn254.HasIcicle {
-			var pk icicle_bn254.ProvingKey
-			if err := icicle_bn254.Setup(_r1cs, &pk, &vk); err != nil {
-				return nil, nil, err
-			}
-			return &pk, &vk, nil
-		}
 		var pk groth16_bn254.ProvingKey
 		if err := groth16_bn254.Setup(_r1cs, &pk, &vk); err != nil {
 			return nil, nil, err
+		}
+		if icicle_bn254.HasIcicle {
+			return &icicle_bn254.ProvingKey{ProvingKey: &pk}, &vk, nil
 		}
 		return &pk, &vk, nil
 	case *cs_bw6761.R1CS:
@@ -337,7 +333,9 @@ func NewProvingKey(curveID ecc.ID) ProvingKey {
 	case ecc.BN254:
 		pk = &groth16_bn254.ProvingKey{}
 		if icicle_bn254.HasIcicle {
-			pk = &icicle_bn254.ProvingKey{}
+			pk = &icicle_bn254.ProvingKey{
+				ProvingKey: &groth16_bn254.ProvingKey{},
+			}
 		}
 	case ecc.BLS12_377:
 		pk = &groth16_bls12377.ProvingKey{}

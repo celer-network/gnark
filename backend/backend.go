@@ -60,6 +60,10 @@ type ProverConfig struct {
 	ChallengeHash  hash.Hash
 	KZGFoldingHash hash.Hash
 	Accelerator    string
+
+	MultiGpuSelect   []int // when Accelerator == "icicle", at most 5
+	FreePkWithGpu    bool  // default true
+	Krs2WithoutSplit bool  // default false, to
 }
 
 // NewProverConfig returns a default ProverConfig with given prover options opts
@@ -191,6 +195,35 @@ func WithVerifierChallengeHashFunction(hFunc hash.Hash) VerifierOption {
 func WithVerifierKZGFoldingHashFunction(hFunc hash.Hash) VerifierOption {
 	return func(pc *VerifierConfig) error {
 		pc.KZGFoldingHash = hFunc
+		return nil
+	}
+}
+
+func WithMultiGpuSelect(deviceIds []int) ProverOption {
+	return func(pc *ProverConfig) error {
+		if len(deviceIds) == 0 {
+			// if 0, prove will skip use multi gpu
+			return nil
+		}
+		pc.MultiGpuSelect = deviceIds
+		for i := len(deviceIds); i < 8; i++ {
+			// file to 5
+			pc.MultiGpuSelect = append(pc.MultiGpuSelect, 0)
+		}
+		return nil
+	}
+}
+
+func WithFreePkWithGpu(free bool) ProverOption {
+	return func(pc *ProverConfig) error {
+		pc.FreePkWithGpu = free
+		return nil
+	}
+}
+
+func WithKrs2NoSplit(noSplit bool) ProverOption {
+	return func(pc *ProverConfig) error {
+		pc.Krs2WithoutSplit = noSplit
 		return nil
 	}
 }
