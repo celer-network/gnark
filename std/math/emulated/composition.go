@@ -23,7 +23,8 @@ func recompose(inputs []*big.Int, nbBits uint, res *big.Int) error {
 		res.Lsh(res, nbBits)
 		res.Add(res, inputs[len(inputs)-i-1])
 	}
-	// TODO @gbotrel mod reduce ?
+	// we do not mod-reduce here as the result is mod-reduced by the caller if
+	// needed. In some places we need non-reduced results.
 	return nil
 }
 
@@ -67,7 +68,9 @@ func decompose(input *big.Int, nbBits uint, res []*big.Int) error {
 // then no such underflow happens and s = a-b (mod p) as the padding is multiple
 // of p.
 func subPadding(modulus *big.Int, bitsPerLimbs uint, overflow uint, nbLimbs uint) []*big.Int {
-
+	if modulus.Cmp(big.NewInt(0)) == 0 {
+		panic("modulus is zero")
+	}
 	// first, we build a number nLimbs, such that nLimbs > b;
 	// here b is defined by its bounds, that is b is an element with nbLimbs of (bitsPerLimbs+overflow)
 	// so a number nLimbs > b, is simply taking the next power of 2 over this bound .

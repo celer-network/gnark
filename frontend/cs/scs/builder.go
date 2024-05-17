@@ -192,6 +192,13 @@ func (builder *builder) addPlonkConstraint(c sparseR1C, debugInfo ...constraint.
 	if !c.qM.IsZero() && (c.xa == 0 || c.xb == 0) {
 		// TODO this is internal but not easy to detect; if qM is set, but one or both of xa / xb is not,
 		// since wireID == 0 is a valid wire, it may trigger unexpected behavior.
+		//
+		// ivokub: This essentially means we add a constraint which is always
+		// satisfied for any input. It only increases the number of constraints
+		// without adding any real constraints on the inputs. But this is good
+		// to catch unoptimal code on the caller side -- we have found a few
+		// multiplications by zero in field emulation and emulated group
+		// arithmetic. And this has allowed to optimize the implementation.
 		log := logger.Logger()
 		log.Warn().Msg("adding a plonk constraint with qM set but xa or xb == 0 (wire 0)")
 	}
@@ -715,18 +722,23 @@ func (builder *builder) GetWireConstraints(wires []frontend.Variable, addMissing
 		}
 		lookup[ww.WireID()] = struct{}{}
 	}
+	nbPub := builder.cs.GetNbPublicVariables()
 	res := make([][2]int, 0, len(wires))
 	iterator := builder.cs.GetSparseR1CIterator()
 	for c, constraintIdx := iterator.Next(), 0; c != nil; c, constraintIdx = iterator.Next(), constraintIdx+1 {
 		if _, ok := lookup[int(c.XA)]; ok {
-			res = append(res, [2]int{constraintIdx, 0})
+			res = append(res, [2]int{nbPub + constraintIdx, 0})
 			delete(lookup, int(c.XA))
 			continue
 		}
 		if _, ok := lookup[int(c.XB)]; ok {
-			res = append(res, [2]int{constraintIdx, 1})
+			res = append(res, [2]int{nbPub + constraintIdx, 1})
 			delete(lookup, int(c.XB))
 			continue
+		}
+		if len(lookup) == 0 {
+			// we can break early if we found constraints for all the wires
+			break
 		}
 	}
 	if addMissing {
@@ -741,7 +753,7 @@ func (builder *builder) GetWireConstraints(wires []frontend.Variable, addMissing
 				QL: constraint.CoeffIdOne,
 				QO: constraint.CoeffIdMinusOne,
 			}, builder.genericGate)
-			res = append(res, [2]int{constraintIdx, 0})
+			res = append(res, [2]int{nbPub + constraintIdx, 0})
 			delete(lookup, k)
 		}
 	}
