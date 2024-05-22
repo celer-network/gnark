@@ -43,7 +43,7 @@ const HasIcicle = true
 var (
 	singleDeviceLock sync.Mutex
 	deviceSetupLock  sync.Mutex
-	solveLimit       = make(chan int, 2)
+	SolveLimit       = make(chan int, 2) // be careful to init
 )
 
 type deviceInfo struct {
