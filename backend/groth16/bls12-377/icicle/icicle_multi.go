@@ -220,9 +220,9 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 		return nil
 	}))
 
-	solveLimit <- 1
+	SolveLimit <- 1
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
-	<-solveLimit
+	<-SolveLimit
 	if err != nil {
 		return nil, err
 	}
