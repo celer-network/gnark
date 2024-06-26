@@ -77,7 +77,7 @@ func TestStorageMemoryLeakCircuitInGpuOnBls12377_2(t *testing.T) {
 	nativeProver := groth162.GetNativeProverOptions(ecc.BW6_761.ScalarField(), ecc.BLS12_377.ScalarField())
 
 	for i := 0; i < 100; i++ {
-		groth16.Prove(ccs, pk, circuitWitness, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{4, 4, 4, 4, 4}))
+		groth16.Prove(ccs, pk, circuitWitness, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 0, 0, 0, 0}))
 		time.Sleep(3 * time.Second)
 	}
 
