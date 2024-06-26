@@ -529,6 +529,188 @@ func ProveOnMulti(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, op
 	return proof, nil
 }
 
+// Prove generates the proof of knowledge of a r1cs with full witness (secret + public part).
+func ProveOnMultiDebugNtt(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*groth16_bls12377.Proof, error) {
+	log := logger.Logger().With().Str("curve", r1cs.CurveID().String()).Str("acceleration", "icicle").Int("nbConstraints", r1cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+	log.Debug().Msg("start ProveOnMulti")
+	opt, err := backend.NewProverConfig(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("new prover config: %w", err)
+	}
+	if opt.HashToFieldFn == nil {
+		opt.HashToFieldFn = hash_to_field.New([]byte(constraint.CommitmentDst))
+	}
+	if !pk.isDeviceReady() {
+		log.Debug().Msg("precomputing proving key on multi GPU")
+		if err := pk.setupDevicePointersOnMulti(opt.MultiGpuSelect, opt.FreePkWithGpu); err != nil {
+			return nil, fmt.Errorf("setup device pointers: %w", err)
+		}
+	}
+
+	deviceIds := opt.MultiGpuSelect
+
+	commitmentInfo := r1cs.CommitmentInfo.(constraint.Groth16Commitments)
+
+	proof := &groth16_bls12377.Proof{Commitments: make([]curve.G1Affine, len(commitmentInfo))}
+
+	solverOpts := opt.SolverOpts[:len(opt.SolverOpts):len(opt.SolverOpts)]
+
+	privateCommittedValues := make([][]fr.Element, len(commitmentInfo))
+
+	// override hints
+	bsb22ID := solver.GetHintID(fcs.Bsb22CommitmentComputePlaceholder)
+	solverOpts = append(solverOpts, solver.OverrideHint(bsb22ID, func(_ *big.Int, in []*big.Int, out []*big.Int) error {
+		i := int(in[0].Int64())
+		in = in[1:]
+		privateCommittedValues[i] = make([]fr.Element, len(commitmentInfo[i].PrivateCommitted))
+		hashed := in[:len(commitmentInfo[i].PublicAndCommitmentCommitted)]
+		committed := in[+len(hashed):]
+		for j, inJ := range committed {
+			privateCommittedValues[i][j].SetBigInt(inJ)
+		}
+
+		var err error
+		if proof.Commitments[i], err = pk.CommitmentKeys[i].Commit(privateCommittedValues[i]); err != nil {
+			return err
+		}
+
+		opt.HashToFieldFn.Write(constraint.SerializeCommitment(proof.Commitments[i].Marshal(), hashed, (fr.Bits-1)/8+1))
+		hashBts := opt.HashToFieldFn.Sum(nil)
+		opt.HashToFieldFn.Reset()
+		nbBuf := fr.Bytes
+		if opt.HashToFieldFn.Size() < fr.Bytes {
+			nbBuf = opt.HashToFieldFn.Size()
+		}
+		var res fr.Element
+		res.SetBytes(hashBts[:nbBuf])
+		res.BigInt(out[0])
+		return nil
+	}))
+
+	solveLimit <- 1
+	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
+	<-solveLimit
+	if err != nil {
+		return nil, err
+	}
+
+	solution := _solution.(*cs.R1CSSolution)
+	wireValues := []fr.Element(solution.W)
+
+	// sample random r and s
+	var r, s big.Int
+	var _r, _s, _kr fr.Element
+	if _, err := _r.SetRandom(); err != nil {
+		return nil, err
+	}
+	if _, err := _s.SetRandom(); err != nil {
+		return nil, err
+	}
+	_kr.Mul(&_r, &_s).Neg(&_kr)
+
+	_r.BigInt(&r)
+	_s.BigInt(&s)
+
+	// computes r[δ], s[δ], kr[δ]
+	commitmentPokDone := make(chan error, 1)
+	go func() {
+		commitmentsSerialized := make([]byte, fr.Bytes*len(commitmentInfo))
+		for i := range commitmentInfo {
+			copy(commitmentsSerialized[fr.Bytes*i:], wireValues[commitmentInfo[i].CommitmentIndex].Marshal())
+		}
+
+		proof.CommitmentPok, err = pedersen.BatchProve(pk.CommitmentKeys, privateCommittedValues, commitmentsSerialized)
+		commitmentPokDone <- err
+	}()
+
+	start := time.Now()
+
+	var krs2 curve.G1Jac
+	computeKrs2 := func(deviceId int) error {
+		deviceLocks[deviceId].Lock()
+		defer deviceLocks[deviceId].Unlock()
+
+		// H (witness reduction / FFT part)
+		var h icicle_core.DeviceSlice
+		h = computeHOnDevice(solution.A, solution.B, solution.C, pk, log, deviceId)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		log.Debug().Msg("go computeHOnDevice")
+
+		// TODO wait h done
+		sizeH := int(pk.Domain.Cardinality - 1)
+
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		//resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+
+		hc2_1 := h.Range(0, sizeH/2, false)
+		hc2_2 := h.Range(sizeH/2, sizeH, false)
+		resKrs2_1 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		resKrs2_2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+
+		icicle_msm.Msm(hc2_1, pk.G1Device.Z.Range(0, sizeH/2, false), &cfg, resKrs2_1)
+		icicle_msm.Msm(hc2_2, pk.G1Device.Z.Range(sizeH/2, sizeH-1, true), &cfg, resKrs2_2)
+
+		krs2_gpu_1 := g1ProjectiveToG1Jac(resKrs2_1[0])
+		krs2_gpu_2 := g1ProjectiveToG1Jac(resKrs2_2[0])
+
+		krs2_gpu_add := krs2_gpu_1.AddAssign(&krs2_gpu_2)
+		krs2 = *krs2_gpu_add
+		//icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
+		//krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+
+		h.Free()
+
+		return nil
+	}
+
+	computeKrs2WithNoSplit := func(deviceId int) error {
+		deviceLocks[deviceId].Lock()
+		defer deviceLocks[deviceId].Unlock()
+
+		// H (witness reduction / FFT part)
+		var h icicle_core.DeviceSlice
+		h = computeHOnDevice(solution.A, solution.B, solution.C, pk, log, deviceId)
+		solution.A = nil
+		solution.B = nil
+		solution.C = nil
+		log.Debug().Msg("go computeHOnDevice no split")
+
+		// TODO wait h done
+		sizeH := int(pk.Domain.Cardinality - 1)
+		cfg := icicle_msm.GetDefaultMSMConfig()
+		resKrs2 := make(icicle_core.HostSlice[icicle_bls12377.Projective], 1)
+		start := time.Now()
+		icicle_msm.Msm(h.RangeTo(sizeH, false), pk.G1Device.Z, &cfg, resKrs2)
+		log.Debug().Dur("took", time.Since(start)).Msg("MSM Krs2")
+		krs2 = g1ProjectiveToG1Jac(resKrs2[0])
+		h.Free()
+		return nil
+	}
+
+	Krs2Done := make(chan error, 1)
+	icicle_cr.RunOnDevice(deviceIds[0], func(args ...any) {
+		if opt.Krs2WithoutSplit {
+			Krs2Done <- computeKrs2WithNoSplit(deviceIds[0])
+		} else {
+			Krs2Done <- computeKrs2(deviceIds[0])
+		}
+	})
+
+	log.Debug().Msg("go computeKrs2")
+
+	<-Krs2Done
+	<-commitmentPokDone
+
+	fmt.Sprintln(krs2)
+
+	log.Debug().Dur("took", time.Since(start)).Msg("prover done")
+	return proof, nil
+}
+
 func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger, deviceId int) icicle_core.DeviceSlice {
 	// H part of Krs
 	// Compute H (hz=ab-c, where z=-2 on ker X^n+1 (z(x)=x^n-1))

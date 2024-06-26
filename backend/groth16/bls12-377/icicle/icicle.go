@@ -235,7 +235,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return groth16_bls12377.Prove(r1cs, pk.ProvingKey, fullWitness, opts...)
 	}
 	if len(opt.MultiGpuSelect) > 0 {
-		return ProveOnMulti(r1cs, pk, fullWitness, opts...)
+		return ProveOnMultiDebugNtt(r1cs, pk, fullWitness, opts...)
 	}
 
 	if opt.HashToFieldFn == nil {

@@ -3,6 +3,7 @@ package testgpu
 import (
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
@@ -11,6 +12,8 @@ import (
 	groth162 "github.com/consensys/gnark/std/recursion/groth16"
 	"github.com/consensys/gnark/test"
 	"github.com/rs/zerolog"
+	"sync"
+	"time"
 
 	"os"
 	"testing"
@@ -41,6 +44,43 @@ func TestStorageMemoryLeakCircuitInGpuOnBls12377(t *testing.T) {
 	nativeVerifierOptions := groth162.GetNativeVerifierOptions(ecc.BW6_761.ScalarField(), ecc.BLS12_377.ScalarField())
 	err = groth16.Verify(pf, vk, pubW, nativeVerifierOptions)
 	assert.NoError(err)
+}
+
+func TestStorageMemoryLeakCircuitInGpuOnBls12377_2(t *testing.T) {
+	logger.Set(zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05"}).With().Timestamp().Logger())
+	fileName := "storage_with_mimc"
+
+	assert := test.NewAssert(t)
+	circuitWitness, err := witness.New(ecc.BLS12_377.ScalarField())
+	assert.NoError(err)
+
+	err = ReadWitness(fmt.Sprintf("%s.witness", fileName), circuitWitness)
+	assert.NoError(err)
+
+	var ccs *cs_12377.R1CS
+	var pk groth16.ProvingKey
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		ccs = LoadOrGenCcsBLS12377ForTest(assert, fileName)
+	}()
+
+	go func() {
+		defer wg.Done()
+		pk, _ = LoadOrGenPkVkForTest(assert, ecc.BLS12_377, fileName)
+	}()
+
+	wg.Wait()
+
+	nativeProver := groth162.GetNativeProverOptions(ecc.BW6_761.ScalarField(), ecc.BLS12_377.ScalarField())
+
+	for i := 0; i < 100; i++ {
+		groth16.Prove(ccs, pk, circuitWitness, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{4, 5, 5, 6, 6}))
+		time.Sleep(3 * time.Second)
+	}
+
 }
 
 func ReadWitness(filename string, witness witness.Witness) error {
