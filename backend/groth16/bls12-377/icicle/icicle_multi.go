@@ -93,32 +93,6 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 		initNttDone <- true
 	})
 
-	/*************************  End Init Domain Device  ***************************/
-	/*************************  Start G1 Device Setup  ***************************/
-	/*************************     A      ***************************/
-	copyADone := make(chan bool, 1)
-	icicle_cr.RunOnDevice(deviceIds[1], func(args ...any) {
-		g1AHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.A)
-		g1AHost.CopyToDevice(&pk.G1Device.A, true)
-		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.A)
-		copyADone <- true
-	})
-	/*************************     B      ***************************/
-	copyBDone := make(chan bool, 1)
-	icicle_cr.RunOnDevice(deviceIds[3], func(args ...any) {
-		g1BHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.B)
-		g1BHost.CopyToDevice(&pk.G1Device.B, true)
-		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.B)
-		copyBDone <- true
-	})
-	/*************************     K      ***************************/
-	copyKDone := make(chan bool, 1)
-	icicle_cr.RunOnDevice(deviceIds[4], func(args ...any) {
-		g1KHost := (icicle_core.HostSlice[curve.G1Affine])(pk.G1.K)
-		g1KHost.CopyToDevice(&pk.G1Device.K, true)
-		icicle_bls12377.AffineFromMontgomery(&pk.G1Device.K)
-		copyKDone <- true
-	})
 	/*************************     Z      ***************************/
 	copyZDone := make(chan bool, 1)
 	icicle_cr.RunOnDevice(deviceIds[0], func(args ...any) {
@@ -129,22 +103,8 @@ func (pk *ProvingKey) setupDevicePointersOnMulti(deviceIds []int, freePk bool) e
 	})
 	/*************************  End G1 Device Setup  ***************************/
 	<-copyDenDone
-	<-copyADone
-	<-copyBDone
-	<-copyKDone
 	<-copyZDone
-
 	<-initNttDone
-	/*************************  Start G2 Device Setup  ***************************/
-	copyG2BDone := make(chan bool, 1)
-	icicle_cr.RunOnDevice(deviceIds[2], func(args ...any) {
-		g2BHost := (icicle_core.HostSlice[curve.G2Affine])(pk.G2.B)
-		g2BHost.CopyToDevice(&pk.G2Device.B, true)
-		icicle_g2.G2AffineFromMontgomery(&pk.G2Device.B)
-		copyG2BDone <- true
-	})
-
-	<-copyG2BDone
 	/*************************  End G2 Device Setup  ***************************/
 
 	if freePk {
