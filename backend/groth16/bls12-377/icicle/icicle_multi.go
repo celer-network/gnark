@@ -566,6 +566,7 @@ func computeHOnDevice(a, b, c []fr.Element, pk *ProvingKey, log zerolog.Logger, 
 		icicle_cr.SynchronizeStream(&scalarsStream)
 		log.Debug().Dur("took", time.Since(start)).Msg("computeH: NTT + INTT")
 		channel <- scalarsDevice
+		icicle_cr.DestroyStream(&scalarsStream)
 	}
 
 	icicle_cr.RunOnDevice(deviceId, func(args ...any) {
