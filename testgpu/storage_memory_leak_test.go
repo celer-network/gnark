@@ -12,8 +12,10 @@ import (
 	groth162 "github.com/consensys/gnark/std/recursion/groth16"
 	"github.com/consensys/gnark/test"
 	"github.com/rs/zerolog"
-	"os"
 	"sync"
+	"time"
+
+	"os"
 	"testing"
 )
 
@@ -76,7 +78,7 @@ func TestStorageMemoryLeakCircuitInGpuOnBls12377_2(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		groth16.Prove(ccs, pk, circuitWitness, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{4, 5, 5, 6, 6}))
-		//time.Sleep(3 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 
 }
