@@ -90,7 +90,10 @@ func (cs *system) Solve(witness witness.Witness, opts ...csolver.Option) (any, e
 	defer solver.printLogs(cs.Logs)
 
 	// run it.
-	if err := solver.run(); err != nil {
+	solveLimit <- 1
+	err = solver.run()
+	<-solveLimit
+	if err != nil {
 		log.Err(err).Send()
 		return nil, err
 	}

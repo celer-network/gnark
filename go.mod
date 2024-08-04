@@ -20,6 +20,8 @@ require (
 	golang.org/x/sync v0.5.0
 )
 
+require github.com/panjf2000/ants v1.3.0 // indirect
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/ingonyama-zk/icicle/v2 v2.0.3

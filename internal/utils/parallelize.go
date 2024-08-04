@@ -1,9 +1,18 @@
 package utils
 
 import (
+	"github.com/panjf2000/ants"
 	"runtime"
 	"sync"
 )
+
+var ParallelizePool *ants.PoolWithFunc
+var SolverPoolInited bool
+var initSolverPoolLock sync.Mutex
+
+func ParallelizeWithAnt() {
+
+}
 
 // Parallelize process in parallel the work function
 func Parallelize(nbIterations int, work func(int, int), maxCpus ...int) {

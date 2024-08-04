@@ -124,6 +124,10 @@ func TestBN254InBN254(t *testing.T) {
 	}
 	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, outerCircuit)
+	assert.NoError(err)
+	fmt.Println(ccs.GetNbConstraints())
 }
 
 func TestBLS12InBW6(t *testing.T) {

@@ -23,9 +23,12 @@ import (
 	"github.com/consensys/gnark-crypto/field/pool"
 	"github.com/consensys/gnark/constraint"
 	csolver "github.com/consensys/gnark/constraint/solver"
+	"github.com/panjf2000/ants"
 	"github.com/rs/zerolog"
+	"log"
 	"math"
 	"math/big"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -414,9 +417,56 @@ func (solver *solver) processInstruction(pi constraint.PackedInstruction, scratc
 	return nil
 }
 
+var SolverPool *ants.PoolWithFunc
+var SolverPoolInited bool
+var initSolverPoolLock sync.Mutex
+
+type OneSolverTask struct {
+	chTasks chan []int
+	chError chan error
+
+	solver *solver
+
+	wg sync.WaitGroup
+}
+
+func InitSolverPool() {
+	var err error
+	initSolverPoolLock.Lock()
+	defer initSolverPoolLock.Unlock()
+	if SolverPoolInited == true {
+		return
+	}
+	SolverPool, err = ants.NewPoolWithFunc(runtime.NumCPU()*SOLVER_PARALLIZE*2, func(s interface{}) {
+		k := s.(*OneSolverTask)
+		var scratch scratch
+		for t := range k.chTasks {
+			for _, i := range t {
+				if serr := k.solver.processInstruction(k.solver.Instructions[i], &scratch); serr != nil {
+					k.chError <- serr
+					k.wg.Done()
+					return
+				}
+			}
+			k.wg.Done()
+		}
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+	SolverPoolInited = true
+}
+
 // run runs the solver. it return an error if a constraint is not satisfied or if not all wires
 // were instantiated.
+const SOLVER_PARALLIZE = 2
+
+var solveLimit = make(chan int, SOLVER_PARALLIZE)
+
 func (solver *solver) run() error {
+	if SolverPoolInited == false {
+		InitSolverPool()
+	}
 	// minWorkPerCPU is the minimum target number of constraint a task should hold
 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
 	// sequentially without sync.
@@ -429,33 +479,27 @@ func (solver *solver) run() error {
 	// first we solve the unsolved wire (if any)
 	// then we check that the constraint is valid
 	// if a[i] * b[i] != c[i]; it means the constraint is not satisfied
-	var wg sync.WaitGroup
-	chTasks := make(chan []int, solver.nbTasks)
-	chError := make(chan error, solver.nbTasks)
+	oneSolverTask := &OneSolverTask{
+		chTasks: make(chan []int, solver.nbTasks),
+		chError: make(chan error, solver.nbTasks),
+		solver:  solver,
+	}
 
+	// use ants worker pool
 	// start a worker pool
 	// each worker wait on chTasks
 	// a task is a slice of constraint indexes to be solved
 	for i := 0; i < solver.nbTasks; i++ {
-		go func() {
-			var scratch scratch
-			for t := range chTasks {
-				for _, i := range t {
-					if err := solver.processInstruction(solver.Instructions[i], &scratch); err != nil {
-						chError <- err
-						wg.Done()
-						return
-					}
-				}
-				wg.Done()
-			}
-		}()
+		err := SolverPool.Invoke(oneSolverTask)
+		if err != nil {
+			return fmt.Errorf("ant solver pool invoke fail: %v", err)
+		}
 	}
 
 	// clean up pool go routines
 	defer func() {
-		close(chTasks)
-		close(chError)
+		close(oneSolverTask.chTasks)
+		close(oneSolverTask.chError)
 	}()
 
 	var scratch scratch
@@ -496,7 +540,7 @@ func (solver *solver) run() error {
 		extraTasksOffset := 0
 
 		for i := 0; i < nbTasks; i++ {
-			wg.Add(1)
+			oneSolverTask.wg.Add(1)
 			_start := i*nbIterationsPerCpus + extraTasksOffset
 			_end := _start + nbIterationsPerCpus
 			if extraTasks > 0 {
@@ -506,14 +550,14 @@ func (solver *solver) run() error {
 			}
 			// since we're never pushing more than num CPU tasks
 			// we will never be blocked here
-			chTasks <- level[_start:_end]
+			oneSolverTask.chTasks <- level[_start:_end]
 		}
 
 		// wait for the level to be done
-		wg.Wait()
+		oneSolverTask.wg.Wait()
 
-		if len(chError) > 0 {
-			return <-chError
+		if len(oneSolverTask.chError) > 0 {
+			return <-oneSolverTask.chError
 		}
 	}
 

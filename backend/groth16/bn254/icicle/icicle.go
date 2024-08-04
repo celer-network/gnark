@@ -43,7 +43,6 @@ const HasIcicle = true
 var (
 	singleDeviceLock sync.Mutex
 	deviceSetupLock  sync.Mutex
-	solveLimit       = make(chan int, 2)
 )
 
 type deviceInfo struct {
@@ -288,9 +287,7 @@ func Prove(r1cs *cs.R1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...b
 		return nil
 	}))
 
-	solveLimit <- 1
 	_solution, err := r1cs.Solve(fullWitness, solverOpts...)
-	<-solveLimit
 	if err != nil {
 		return nil, err
 	}
