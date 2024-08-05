@@ -100,6 +100,51 @@ func TestMillerLoopTestSolve(t *testing.T) {
 	assert.NoError(err)
 }
 
+type MillerLoopAndMulCircuit struct {
+	Prev    GTEl
+	P       G1Affine
+	Q       G2Affine
+	Current GTEl
+}
+
+func (c *MillerLoopAndMulCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
+	if err != nil {
+		return fmt.Errorf("new pairing: %w", err)
+	}
+	res, err := pairing.MillerLoopAndMul(&c.P, &c.Q, &c.Prev)
+	if err != nil {
+		return fmt.Errorf("pair: %w", err)
+	}
+	pairing.AssertIsEqual(res, &c.Current)
+	return nil
+
+}
+
+func TestMillerLoopAndMulTestSolve(t *testing.T) {
+	assert := test.NewAssert(t)
+	var prev, curr bn254.GT
+	prev.SetRandom()
+	p, q := randomG1G2Affines()
+	lines := bn254.PrecomputeLines(q)
+	// need to use ML with precomputed lines. Otherwise, the result will be different
+	mlres, err := bn254.MillerLoopFixedQ(
+		[]bn254.G1Affine{p},
+		[][2][len(bn254.LoopCounter)]bn254.LineEvaluationAff{lines},
+	)
+	assert.NoError(err)
+	curr.Mul(&prev, &mlres)
+
+	witness := MillerLoopAndMulCircuit{
+		Prev:    NewGTEl(prev),
+		P:       NewG1Affine(p),
+		Q:       NewG2Affine(q),
+		Current: NewGTEl(curr),
+	}
+	err = test.IsSolved(&MillerLoopAndMulCircuit{}, &witness, ecc.BN254.ScalarField())
+	assert.NoError(err)
+}
+
 type PairCircuit struct {
 	InG1 G1Affine
 	InG2 G2Affine
@@ -214,7 +259,7 @@ func (c *PairingCheckCircuit) Define(api frontend.API) error {
 	if err != nil {
 		return fmt.Errorf("new pairing: %w", err)
 	}
-	err = pairing.PairingCheck([]*G1Affine{&c.In1G1, &c.In1G1, &c.In2G1, &c.In2G1}, []*G2Affine{&c.In1G2, &c.In2G2, &c.In1G2, &c.In2G2})
+	err = pairing.PairingCheck([]*G1Affine{&c.In1G1, &c.In2G1}, []*G2Affine{&c.In1G2, &c.In2G2})
 	if err != nil {
 		return fmt.Errorf("pair: %w", err)
 	}
@@ -223,10 +268,13 @@ func (c *PairingCheckCircuit) Define(api frontend.API) error {
 
 func TestPairingCheckTestSolve(t *testing.T) {
 	assert := test.NewAssert(t)
+	// e(a,2b) * e(-2a,b) == 1
 	p1, q1 := randomG1G2Affines()
-	_, q2 := randomG1G2Affines()
 	var p2 bn254.G1Affine
-	p2.Neg(&p1)
+	p2.Double(&p1).Neg(&p2)
+	var q2 bn254.G2Affine
+	q2.Set(&q1)
+	q1.Double(&q1)
 	witness := PairingCheckCircuit{
 		In1G1: NewG1Affine(p1),
 		In1G2: NewG2Affine(q1),
@@ -371,13 +419,74 @@ func TestIsOnG2Solve(t *testing.T) {
 	assert.NoError(err)
 }
 
+type IsMillerLoopAndFinalExpCircuit struct {
+	Prev     GTEl
+	P        G1Affine
+	Q        G2Affine
+	Expected frontend.Variable
+}
+
+func (c *IsMillerLoopAndFinalExpCircuit) Define(api frontend.API) error {
+	pairing, err := NewPairing(api)
+	if err != nil {
+		return fmt.Errorf("new pairing: %w", err)
+	}
+	res := pairing.IsMillerLoopAndFinalExpOne(&c.P, &c.Q, &c.Prev)
+	api.AssertIsEqual(res, c.Expected)
+	return nil
+
+}
+
+func TestIsMillerLoopAndFinalExpCircuitTestSolve(t *testing.T) {
+	assert := test.NewAssert(t)
+	p, q := randomG1G2Affines()
+
+	var np bn254.G1Affine
+	np.Neg(&p)
+
+	ok, err := bn254.PairingCheck([]bn254.G1Affine{p, np}, []bn254.G2Affine{q, q})
+	assert.NoError(err)
+	assert.True(ok)
+
+	lines := bn254.PrecomputeLines(q)
+	// need to use ML with precomputed lines. Otherwise, the result will be different
+	mlres, err := bn254.MillerLoopFixedQ(
+		[]bn254.G1Affine{p},
+		[][2][len(bn254.LoopCounter)]bn254.LineEvaluationAff{lines},
+	)
+	assert.NoError(err)
+
+	witness := IsMillerLoopAndFinalExpCircuit{
+		Prev:     NewGTEl(mlres),
+		P:        NewG1Affine(np),
+		Q:        NewG2Affine(q),
+		Expected: 1,
+	}
+	err = test.IsSolved(&IsMillerLoopAndFinalExpCircuit{}, &witness, ecc.BN254.ScalarField())
+	assert.NoError(err)
+
+	var randPrev bn254.GT
+	randPrev.SetRandom()
+
+	witness = IsMillerLoopAndFinalExpCircuit{
+		Prev:     NewGTEl(randPrev),
+		P:        NewG1Affine(np),
+		Q:        NewG2Affine(q),
+		Expected: 0,
+	}
+	err = test.IsSolved(&IsMillerLoopAndFinalExpCircuit{}, &witness, ecc.BN254.ScalarField())
+	assert.NoError(err)
+}
+
 // bench
 func BenchmarkPairing(b *testing.B) {
-
+	// e(a,2b) * e(-2a,b) == 1
 	p1, q1 := randomG1G2Affines()
-	_, q2 := randomG1G2Affines()
 	var p2 bn254.G1Affine
-	p2.Neg(&p1)
+	p2.Double(&p1).Neg(&p2)
+	var q2 bn254.G2Affine
+	q2.Set(&q1)
+	q1.Double(&q1)
 	witness := PairingCheckCircuit{
 		In1G1: NewG1Affine(p1),
 		In1G2: NewG2Affine(q1),
