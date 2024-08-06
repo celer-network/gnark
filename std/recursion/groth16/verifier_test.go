@@ -2,6 +2,7 @@ package groth16
 
 import (
 	"fmt"
+	"github.com/consensys/gnark/backend"
 	"math/big"
 	"testing"
 
@@ -80,6 +81,32 @@ func (c *OuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
 	return verifier.AssertProof(c.VerifyingKey, c.Proof, c.InnerWitness)
 }
 
+type OuterCircuit2[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
+	Proof        Proof[G1El, G2El]
+	VerifyingKey VerifyingKey[G1El, G2El, GtEl]
+	InnerWitness Witness[FR]
+
+	batchSize int
+}
+
+func (c *OuterCircuit2[FR, G1El, G2El, GtEl]) Define(api frontend.API) error {
+	verifier, err := NewVerifier[FR, G1El, G2El, GtEl](api)
+	if err != nil {
+		return fmt.Errorf("new verifier: %w", err)
+	}
+	var vks []VerifyingKey[G1El, G2El, GtEl]
+	var proofs []Proof[G1El, G2El]
+	var witnesses []Witness[FR]
+
+	for i := 0; i < c.batchSize; i++ {
+		vks = append(vks, c.VerifyingKey)
+		proofs = append(proofs, c.Proof)
+		witnesses = append(witnesses, c.InnerWitness)
+	}
+
+	return verifier.BatchAssertProofBrevis(vks, proofs, witnesses)
+}
+
 type BatchOuterCircuit[FR emulated.FieldParams, G1El algebra.G1ElementT, G2El algebra.G2ElementT, GtEl algebra.GtElementT] struct {
 	Proof        []Proof[G1El, G2El]
 	VerifyingKey []VerifyingKey[G1El, G2El, GtEl]
@@ -102,7 +129,7 @@ func (c *BatchOuterCircuit[FR, G1El, G2El, GtEl]) Define(api frontend.API) error
 
 func TestBN254InBN254(t *testing.T) {
 	assert := test.NewAssert(t)
-	innerCcs, innerVK, innerWitness, innerProof := getInner(assert, ecc.BN254.ScalarField())
+	innerCcs, innerVK, innerWitness, innerProof := getInnerCommitment(assert, ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
 
 	// outer proof
 	circuitVk, err := ValueOfVerifyingKey[sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl](innerVK)
@@ -124,6 +151,11 @@ func TestBN254InBN254(t *testing.T) {
 	}
 	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
 	assert.NoError(err)
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, outerCircuit)
+	assert.NoError(err)
+
+	fmt.Printf("constraint: %d \n", ccs.GetNbConstraints())
 }
 
 func TestBLS12InBW6(t *testing.T) {
@@ -531,5 +563,56 @@ func TestBW6InBN254Commitment(t *testing.T) {
 		VerifyingKey: circuitVk,
 	}
 	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+}
+
+func TestBN254InBN254WithTwo(t *testing.T) {
+	assert := test.NewAssert(t)
+	innerCcs, innerVK, innerWitness, innerProof := getInnerCommitment(assert, ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
+
+	// outer proof
+	circuitVk, err := ValueOfVerifyingKey[sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl](innerVK)
+	assert.NoError(err)
+	circuitWitness, err := ValueOfWitness[sw_bn254.ScalarField](innerWitness)
+	assert.NoError(err)
+	circuitProof, err := ValueOfProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerProof)
+	assert.NoError(err)
+
+	batchSize := 1
+
+	outerCircuit := &OuterCircuit2[sw_bn254.ScalarField, sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl]{
+		Proof:        PlaceholderProof[sw_bn254.G1Affine, sw_bn254.G2Affine](innerCcs),
+		InnerWitness: PlaceholderWitness[sw_bn254.ScalarField](innerCcs),
+		VerifyingKey: PlaceholderVerifyingKey[sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl](innerCcs),
+		batchSize:    batchSize,
+	}
+	outerAssignment := &OuterCircuit2[sw_bn254.ScalarField, sw_bn254.G1Affine, sw_bn254.G2Affine, sw_bn254.GTEl]{
+		InnerWitness: circuitWitness,
+		Proof:        circuitProof,
+		VerifyingKey: circuitVk,
+		batchSize:    batchSize,
+	}
+	err = test.IsSolved(outerCircuit, outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, outerCircuit)
+	assert.NoError(err)
+
+	fmt.Printf("constraint: %d \n", ccs.GetNbConstraints())
+
+	w, err := frontend.NewWitness(outerAssignment, ecc.BN254.ScalarField())
+	assert.NoError(err)
+	pubW, err := w.Public()
+	assert.NoError(err)
+
+	pk, vk, err := groth16.Setup(ccs)
+	assert.NoError(err)
+
+	nativeProver := GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
+	pf, err := groth16.Prove(ccs, pk, w, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 0, 0, 0, 0}))
+	assert.NoError(err)
+
+	nativeVerifierOptions := GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
+	err = groth16.Verify(pf, vk, pubW, nativeVerifierOptions)
 	assert.NoError(err)
 }
