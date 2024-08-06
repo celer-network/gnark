@@ -615,6 +615,16 @@ func TestBN254InBN254WithTwo(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		nativeProver := GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
+		pf, err := groth16.Prove(ccs, pk, w, nativeProver, backend.WithIcicleAcceleration())
+		assert.NoError(err)
+
+		nativeVerifierOptions := GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
+		err = groth16.Verify(pf, vk, pubW, nativeVerifierOptions)
+		assert.NoError(err)
+	}
+
+	for i := 0; i < 5; i++ {
+		nativeProver := GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
 		pf, err := groth16.Prove(ccs, pk, w, nativeProver, backend.WithIcicleAcceleration(), backend.WithMultiGpuSelect([]int{0, 0, 0, 0, 0}))
 		assert.NoError(err)
 
