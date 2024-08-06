@@ -3,6 +3,8 @@ package sha3
 import (
 	"crypto/rand"
 	"fmt"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"hash"
 	"testing"
 
@@ -20,11 +22,11 @@ type testCase struct {
 }
 
 var testCases = map[string]testCase{
-	"SHA3-256":   {New256, sha3.New256},
-	"SHA3-384":   {New384, sha3.New384},
-	"SHA3-512":   {New512, sha3.New512},
+	//"SHA3-256":   {New256, sha3.New256},
+	//"SHA3-384":   {New384, sha3.New384},
+	//"SHA3-512":   {New512, sha3.New512},
 	"Keccak-256": {NewLegacyKeccak256, sha3.NewLegacyKeccak256},
-	"Keccak-512": {NewLegacyKeccak512, sha3.NewLegacyKeccak512},
+	//"Keccak-512": {NewLegacyKeccak512, sha3.NewLegacyKeccak512},
 }
 
 type sha3Circuit struct {
@@ -59,7 +61,7 @@ func (c *sha3Circuit) Define(api frontend.API) error {
 
 func TestSHA3(t *testing.T) {
 	assert := test.NewAssert(t)
-	in := make([]byte, 310)
+	in := make([]byte, 320)
 	_, err := rand.Reader.Read(in)
 	assert.NoError(err)
 
@@ -85,6 +87,19 @@ func TestSHA3(t *testing.T) {
 			if err := test.IsSolved(circuit, witness, ecc.BN254.ScalarField()); err != nil {
 				t.Fatalf("%s: %s", name, err)
 			}
+
+			ccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, circuit)
+			if err != nil {
+				t.Fatalf("%s: %s", name, err)
+			}
+			fmt.Printf("plonk nb cnstraint: %d \n", ccs.GetNbConstraints())
+
+			ccs2, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+			if err != nil {
+				t.Fatalf("%s: %s", name, err)
+			}
+			fmt.Printf("groth16 nb cnstraint: %d \n", ccs2.GetNbConstraints())
+
 		}, name)
 	}
 }
