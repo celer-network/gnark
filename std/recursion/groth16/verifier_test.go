@@ -615,7 +615,7 @@ func TestBN254InBN254WithTwo(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		nativeProver := GetNativeProverOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
-		pf, err := groth16.Prove(ccs, pk, w, nativeProver, backend.WithIcicleAcceleration())
+		pf, err := groth16.Prove(ccs, pk, w, nativeProver)
 		assert.NoError(err)
 
 		nativeVerifierOptions := GetNativeVerifierOptions(ecc.BN254.ScalarField(), ecc.BN254.ScalarField())
