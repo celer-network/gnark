@@ -65,7 +65,7 @@ func (pk *ProvingKey) setupDevicePointers(freePk bool) error {
 		return nil
 	}
 	pk.deviceInfo = &deviceInfo{}
-	gen, _ := fft.Generator(2 * pk.Domain.Cardinality)
+	gen, _ := fft.Generator(3 * pk.Domain.Cardinality)
 	/*************************     Den      ***************************/
 	n := int(pk.Domain.Cardinality)
 	var denI, oneI fr.Element
